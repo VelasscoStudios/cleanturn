@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSession, assertFetchHeader } from "@/lib/auth";
+import { sessionUserExists } from "@/lib/session-user";
 import { setJobStatusSchema } from "@/lib/validation";
 import { cleanerTransition, adminTransition } from "@/lib/state";
 
@@ -10,6 +11,11 @@ export async function PATCH(
 ) {
   const session = await getSession();
   if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  // Re-validate the account on every request: a deactivated/deleted user must
+  // not be able to keep driving job status off a still-sealed cookie.
+  if (!(await sessionUserExists(session))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   if (!assertFetchHeader(req)) {

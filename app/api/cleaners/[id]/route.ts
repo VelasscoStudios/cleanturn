@@ -96,6 +96,19 @@ export async function PATCH(
       },
     });
 
+    // Deactivating a cleaner must release their open jobs so the schedule
+    // doesn't hold work against someone who can no longer log in. Terminal
+    // jobs (done/cancelled) keep their history.
+    if (data.active === false) {
+      await prisma.job.updateMany({
+        where: {
+          cleanerId: id,
+          status: { in: ["assigned", "in_progress", "awaiting_confirm"] },
+        },
+        data: { cleanerId: null, status: "unassigned", arrivedAt: null, leftAt: null },
+      });
+    }
+
     // Plaintext PIN returned ONCE on reset, never stored or logged.
     return NextResponse.json(newPin ? { cleaner, pin: newPin } : { cleaner });
   } catch (e: unknown) {

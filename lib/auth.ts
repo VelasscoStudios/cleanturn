@@ -1,18 +1,34 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getIronSession, type SessionOptions } from "iron-session";
+import { prisma } from "./db";
 
 export const SESSION_COOKIE = "cleanturn_session";
 
 export type SessionData = { role: "admin" | "cleaner"; id: string };
 
-const sessionSecret =
-  process.env.SESSION_SECRET ||
-  (process.env.NODE_ENV === "production"
-    ? (() => {
-        throw new Error("SESSION_SECRET must be set to a 32+ char secret");
-      })()
-    : "dev-only-insecure-secret-please-set-env-1234567890");
+// Only these environments may fall back to the insecure dev secret / non-Secure
+// cookie. Anything else — including an UNSET NODE_ENV, the dangerous case on a
+// misconfigured production host — fails closed rather than sealing sessions
+// with a secret that is public in this repo.
+const isLocalDev =
+  process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test";
+
+const DEV_FALLBACK_SECRET = "dev-only-insecure-secret-please-set-env-1234567890";
+
+const sessionSecret = (() => {
+  const fromEnv = process.env.SESSION_SECRET;
+  if (fromEnv) {
+    if (fromEnv.length < 32) {
+      throw new Error("SESSION_SECRET must be at least 32 characters");
+    }
+    return fromEnv;
+  }
+  if (isLocalDev) return DEV_FALLBACK_SECRET;
+  throw new Error(
+    "SESSION_SECRET must be set (NODE_ENV is not development/test — refusing the insecure fallback)",
+  );
+})();
 
 function sessionOptions(maxAgeSeconds: number): SessionOptions {
   return {
@@ -20,7 +36,10 @@ function sessionOptions(maxAgeSeconds: number): SessionOptions {
     cookieName: SESSION_COOKIE,
     cookieOptions: {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      // Secure everywhere except explicit local dev/test (localhost is http).
+      // Decoupled from a production-only check so a host that forgot to set
+      // NODE_ENV=production still ships a Secure cookie.
+      secure: !isLocalDev,
       sameSite: "lax",
       maxAge: maxAgeSeconds,
       path: "/",
@@ -59,12 +78,27 @@ export async function destroySession(): Promise<void> {
 export async function requireAdminApi(): Promise<SessionData | null> {
   const session = await getSession();
   if (!session || session.role !== "admin") return null;
+  // Re-validate on every request: a sealed cookie can outlive its user. A
+  // deleted admin's 7-day cookie must not keep working.
+  const admin = await prisma.adminUser.findUnique({
+    where: { id: session.id },
+    select: { id: true },
+  });
+  if (!admin) return null;
   return session;
 }
 
 export async function requireCleanerApi(): Promise<SessionData | null> {
   const session = await getSession();
   if (!session || session.role !== "cleaner") return null;
+  // Re-validate existence AND active status: deactivating a cleaner must
+  // immediately revoke their API access (incl. door/access codes), not wait
+  // for the 30-day cookie to expire.
+  const cleaner = await prisma.cleaner.findUnique({
+    where: { id: session.id },
+    select: { active: true },
+  });
+  if (!cleaner || !cleaner.active) return null;
   return session;
 }
 

@@ -20,14 +20,51 @@ export type SyncCounts = {
 
 const FETCH_TIMEOUT_MS = 15_000;
 const MAX_RESPONSE_BYTES = 1024 * 1024; // 1MB cap
+const MAX_REDIRECTS = 3;
 const LOCAL_SHORT_CIRCUIT_MARKER = "/api/dev/ical/";
 const ADMIN_ALERT_LOOKBACK_MS = 24 * 60 * 60 * 1000; // dedupe to 1/day
 const FEED_ERROR_ALERT_THRESHOLD_MS = 6 * 60 * 60 * 1000; // 6h
 const UNASSIGNED_WINDOW_DAYS = 2; // "within 48h"
 
 /**
- * SSRF guard: only allow https:// URLs whose hostname is airbnb.com or a
- * subdomain of airbnb.* (per brief §9 / spec §6).
+ * Registrable Airbnb domains whose calendar exports we accept. Airbnb serves
+ * iCal from www.airbnb.<tld>; we allow each apex and any subdomain of it.
+ *
+ * This is an explicit allowlist rather than a loose regex on purpose: a
+ * pattern like /airbnb\.[a-z.]+/ also matches lookalike hosts an attacker can
+ * register — "airbnb.com.evil.com" and "airbnb.evil.com" both satisfy it —
+ * which is exactly the SSRF bypass we must not permit. Matching against a
+ * fixed set of registrable domains makes "airbnb" the registrable label, not
+ * just any label in the name.
+ */
+const AIRBNB_DOMAINS = [
+  "airbnb.com",
+  "airbnb.ca",
+  "airbnb.co.uk",
+  "airbnb.com.au",
+  "airbnb.de",
+  "airbnb.fr",
+  "airbnb.es",
+  "airbnb.it",
+  "airbnb.nl",
+  "airbnb.ie",
+  "airbnb.mx",
+  "airbnb.pt",
+  "airbnb.at",
+  "airbnb.ch",
+  "airbnb.dk",
+  "airbnb.se",
+];
+
+function hostIsAllowed(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.$/, ""); // strip trailing dot
+  return AIRBNB_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`));
+}
+
+/**
+ * SSRF guard: accept only https:// URLs, with no embedded credentials, whose
+ * hostname is one of the registrable Airbnb domains above (or a subdomain of
+ * one). Re-run on every redirect hop — see fetchIcsWithTimeout.
  */
 function isAllowedRemoteIcalUrl(rawUrl: string): boolean {
   let url: URL;
@@ -37,22 +74,43 @@ function isAllowedRemoteIcalUrl(rawUrl: string): boolean {
     return false;
   }
   if (url.protocol !== "https:") return false;
-  const host = url.hostname.toLowerCase();
-  if (host === "airbnb.com") return true;
-  if (host.endsWith(".airbnb.com")) return true;
-  // Allow other airbnb.<tld> variants (airbnb.co.uk, airbnb.ca, etc.)
-  if (/^([a-z0-9-]+\.)*airbnb\.[a-z.]+$/.test(host)) return true;
-  return false;
+  // Reject user:pass@host forms that can confuse allowlist reasoning.
+  if (url.username || url.password) return false;
+  return hostIsAllowed(url.hostname);
 }
 
 async function fetchIcsWithTimeout(url: string): Promise<string> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: { "User-Agent": "CleanTurn/1.0 (+localhost sync)" },
-    });
+    // Follow redirects manually so the SSRF allowlist is re-checked on EVERY
+    // hop. With the default redirect:"follow", the guard would only inspect
+    // the first URL and an allowed host could 30x us onto an internal target.
+    let currentUrl = url;
+    let res: Response;
+    for (let hop = 0; ; hop++) {
+      res = await fetch(currentUrl, {
+        signal: controller.signal,
+        redirect: "manual",
+        headers: { "User-Agent": "CleanTurn/1.0 (+localhost sync)" },
+      });
+      if (res.status >= 300 && res.status < 400) {
+        if (hop >= MAX_REDIRECTS) {
+          throw new Error("iCal fetch exceeded redirect limit");
+        }
+        const location = res.headers.get("location");
+        if (!location) {
+          throw new Error("iCal redirect response missing Location header");
+        }
+        const nextUrl = new URL(location, currentUrl).toString();
+        if (!isAllowedRemoteIcalUrl(nextUrl)) {
+          throw new Error("Refused to follow iCal redirect: SSRF guard rejected target");
+        }
+        currentUrl = nextUrl;
+        continue;
+      }
+      break;
+    }
     if (!res.ok) {
       throw new Error(`iCal fetch failed with status ${res.status}`);
     }

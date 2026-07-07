@@ -1,5 +1,22 @@
 import { z } from "zod";
 
+/**
+ * An http(s) URL. Plain `z.string().url()` accepts dangerous schemes such as
+ * `javascript:`, `data:` and `vbscript:` — which, if later rendered into an
+ * anchor href, become an XSS sink. Restrict to http/https and cap length.
+ */
+export const httpUrlSchema = z
+  .string()
+  .max(2048)
+  .refine((v) => {
+    try {
+      const proto = new URL(v).protocol;
+      return proto === "http:" || proto === "https:";
+    } catch {
+      return false;
+    }
+  }, "must be an http(s) URL");
+
 /** YYYY-MM-DD date-only string. */
 export const dateStrSchema = z
   .string()
@@ -86,17 +103,18 @@ export type MarkOwnerPaidInput = z.infer<typeof markOwnerPaidSchema>;
 // Properties CRUD
 // ---------------------------------------------------------------------------
 export const createPropertySchema = z.object({
-  ownerId: z.string().min(1),
-  nickname: z.string().min(1),
-  address: z.string().min(1),
-  icalUrl: z.string().url(),
-  cleanCostCents: z.number().int().nonnegative(),
-  directions: z.string().optional().default(""),
-  mapsUrl: z.string().url().optional().nullable(),
-  accessCode: z.string().optional().default(""),
+  ownerId: z.string().min(1).max(64),
+  nickname: z.string().min(1).max(200),
+  address: z.string().min(1).max(500),
+  icalUrl: httpUrlSchema,
+  // Money in cents: bounded so a typo/overflow can't create absurd invoices.
+  cleanCostCents: z.number().int().nonnegative().max(100_000_000),
+  directions: z.string().max(2000).optional().default(""),
+  mapsUrl: httpUrlSchema.optional().nullable(),
+  accessCode: z.string().max(200).optional().default(""),
   arriveTime: timeStrSchema,
   outByTime: timeStrSchema,
-  notes: z.string().optional().default(""),
+  notes: z.string().max(2000).optional().default(""),
 });
 export type CreatePropertyInput = z.infer<typeof createPropertySchema>;
 
@@ -109,10 +127,10 @@ export type UpdatePropertyInput = z.infer<typeof updatePropertySchema>;
 // Owners CRUD
 // ---------------------------------------------------------------------------
 export const createOwnerSchema = z.object({
-  name: z.string().min(1),
-  email: z.string().email(),
-  phone: z.string().optional().nullable(),
-  billingNotes: z.string().optional().default(""),
+  name: z.string().min(1).max(200),
+  email: z.string().email().max(320),
+  phone: z.string().max(40).optional().nullable(),
+  billingNotes: z.string().max(2000).optional().default(""),
 });
 export type CreateOwnerInput = z.infer<typeof createOwnerSchema>;
 
@@ -125,16 +143,16 @@ export type UpdateOwnerInput = z.infer<typeof updateOwnerSchema>;
 // Cleaners CRUD
 // ---------------------------------------------------------------------------
 export const createCleanerSchema = z.object({
-  name: z.string().min(1),
-  phone: z.string().min(1),
-  email: z.string().email().optional().nullable(),
+  name: z.string().min(1).max(200),
+  phone: z.string().min(1).max(40),
+  email: z.string().email().max(320).optional().nullable(),
 });
 export type CreateCleanerInput = z.infer<typeof createCleanerSchema>;
 
 export const updateCleanerSchema = z.object({
-  name: z.string().min(1).optional(),
-  phone: z.string().min(1).optional(),
-  email: z.string().email().optional().nullable(),
+  name: z.string().min(1).max(200).optional(),
+  phone: z.string().min(1).max(40).optional(),
+  email: z.string().email().max(320).optional().nullable(),
   active: z.boolean().optional(),
   resetPin: z.boolean().optional(),
 });

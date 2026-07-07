@@ -6,6 +6,12 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ key: string }> }
 ) {
+  // Dev-only fixture feed. Never expose it in production, even though it only
+  // returns synthetic data — keep the deployed surface minimal.
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   const { key } = await params;
 
   const known = demoProperties.some((p) => p.key === key);

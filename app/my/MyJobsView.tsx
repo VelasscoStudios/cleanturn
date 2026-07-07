@@ -228,7 +228,12 @@ function JobCard({
   onAdvance: () => void;
 }) {
   const p = job.property;
-  const mapsHref = p.mapsUrl || `https://maps.google.com/?q=${encodeURIComponent(p.address)}`;
+  // Only trust an http(s) mapsUrl as an href; otherwise fall back to a Maps
+  // query. Defense-in-depth against a stored javascript:/data: URL becoming a
+  // clickable XSS sink even if it slipped past input validation.
+  const safeMapsUrl =
+    p.mapsUrl && /^https?:\/\//i.test(p.mapsUrl) ? p.mapsUrl : null;
+  const mapsHref = safeMapsUrl || `https://maps.google.com/?q=${encodeURIComponent(p.address)}`;
 
   let actionEl: React.ReactNode = null;
   if (isToday) {

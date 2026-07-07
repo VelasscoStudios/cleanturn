@@ -6,13 +6,28 @@ const scriptSrc =
     ? "'self' 'unsafe-inline' 'unsafe-eval'"
     : "'self' 'unsafe-inline'";
 
+const csp = [
+  "default-src 'self'",
+  `script-src ${scriptSrc}`,
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+].join("; ");
+
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   {
-    key: "Content-Security-Policy",
-    value: `default-src 'self'; script-src ${scriptSrc}; style-src 'self' 'unsafe-inline'; img-src 'self' data:`,
+    // Tell browsers to pin HTTPS. Harmless on localhost (dev is http, so no
+    // HSTS state is set there); protects every real deployment from downgrade.
+    key: "Strict-Transport-Security",
+    value: "max-age=63072000; includeSubDomains; preload",
   },
+  { key: "Content-Security-Policy", value: csp },
 ];
 
 const nextConfig: NextConfig = {
