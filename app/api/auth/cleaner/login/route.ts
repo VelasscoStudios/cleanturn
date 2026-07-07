@@ -52,24 +52,24 @@ export async function POST(req: Request) {
   const ipKey = rateLimitKey(ip, phone);
   const idKey = identifierKey(phone);
 
-  if (!checkRateLimit(ipKey) || !checkRateLimit(idKey)) {
-    return NextResponse.json({ error: GENERIC_ERROR }, { status: 429 });
-  }
-
   try {
+    if (!(await checkRateLimit(ipKey)) || !(await checkRateLimit(idKey))) {
+      return NextResponse.json({ error: GENERIC_ERROR }, { status: 429 });
+    }
+
     const cleaner = await prisma.cleaner.findUnique({ where: { phone } });
     // Always run bcrypt (dummy hash when absent/inactive) for constant timing.
     const usable = cleaner && cleaner.active ? cleaner : null;
     const match = await bcrypt.compare(pin, usable?.pinHash ?? DUMMY_HASH);
 
     if (!usable || !match) {
-      recordAttempt(ipKey);
-      recordAttempt(idKey);
+      await recordAttempt(ipKey);
+      await recordAttempt(idKey);
       return NextResponse.json({ error: GENERIC_ERROR }, { status: 401 });
     }
 
-    clearAttempts(ipKey);
-    clearAttempts(idKey);
+    await clearAttempts(ipKey);
+    await clearAttempts(idKey);
     await createSession({ role: "cleaner", id: usable.id });
     return NextResponse.json({ ok: true, role: "cleaner" });
   } catch {

@@ -1,33 +1,36 @@
 /**
- * In-memory login rate limiter. Single-process Map is fine for a localhost
- * demo (brief §1); use a shared store (Redis) if deployed multi-instance.
+ * Durable login rate limiter, backed by the LoginRateLimit table (SQLite).
  *
  * Two independent limits are enforced per login attempt:
  *   1. per (ip, identifier): 5 / 15 min — throttles a single source.
  *   2. per identifier alone: 20 / 15 min — a GLOBAL cap that does NOT depend
- *      on the client IP. This is the important one: the request IP is derived
- *      from the X-Forwarded-For header, which a direct attacker controls, so
- *      an IP-keyed limit alone can be bypassed by rotating the header. The
- *      identifier-only cap bounds brute force against one account (e.g. a
- *      6-digit cleaner PIN) regardless of how many source IPs are spoofed.
+ *      on the client IP. The request IP comes from the X-Forwarded-For header,
+ *      which a direct attacker controls, so an IP-keyed limit alone can be
+ *      bypassed by rotating the header. The identifier-only cap bounds brute
+ *      force against one account (e.g. a 6-digit cleaner PIN) no matter how
+ *      many source IPs are spoofed.
+ *
+ * Persisting the buckets (rather than an in-process Map) means the window
+ * survives process restarts, is shared across every worker on the same DB,
+ * and cannot grow unbounded in memory. The decision/advancement logic is kept
+ * as pure functions (isAllowed / nextBucket) so it is unit-tested without a DB.
  *
  * Usage in a route handler:
- *   if (!checkRateLimit(rateLimitKey(ip, id)) || !checkRateLimit(identifierKey(id))) return 429
+ *   if (!(await checkRateLimit(ipKey)) || !(await checkRateLimit(idKey))) return 429
  *   ... attempt auth ...
- *   if (failed) { recordAttempt(ipKey); recordAttempt(idKey); }
- *   else { clearAttempts(ipKey); clearAttempts(idKey); }
+ *   if (failed) { await recordAttempt(ipKey); await recordAttempt(idKey); }
+ *   else { await clearAttempts(ipKey); await clearAttempts(idKey); }
  */
+import { prisma } from "./db";
 
-const MAX_ATTEMPTS = 5;
-const MAX_ATTEMPTS_PER_IDENTIFIER = 20;
-const WINDOW_MS = 15 * 60 * 1000;
+export const MAX_ATTEMPTS = 5;
+export const MAX_ATTEMPTS_PER_IDENTIFIER = 20;
+export const WINDOW_MS = 15 * 60 * 1000;
 
-type Bucket = {
+export type Bucket = {
   count: number;
-  windowStart: number;
+  windowStart: number; // epoch ms
 };
-
-const buckets = new Map<string, Bucket>();
 
 /** Build a stable rate-limit key from an IP address and an identifier (email/phone). */
 export function rateLimitKey(ip: string, identifier: string): string {
@@ -39,48 +42,54 @@ export function identifierKey(identifier: string): string {
   return `id:${identifier.toLowerCase()}`;
 }
 
-function limitForKey(key: string): number {
+export function limitForKey(key: string): number {
   return key.startsWith("id:") ? MAX_ATTEMPTS_PER_IDENTIFIER : MAX_ATTEMPTS;
 }
 
 /**
- * Returns true if the caller is still allowed to attempt (i.e. under the
- * limit). Does NOT itself record an attempt — call recordAttempt() after a
- * failed auth check.
+ * Pure decision: is a caller holding `bucket` allowed to attempt at time `now`
+ * under `limit`? A missing bucket or an expired window means allowed.
  */
-export function checkRateLimit(key: string): boolean {
-  const bucket = buckets.get(key);
+export function isAllowed(bucket: Bucket | null, now: number, limit: number): boolean {
   if (!bucket) return true;
-
-  const now = Date.now();
-  if (now - bucket.windowStart >= WINDOW_MS) {
-    // Window has expired — caller is allowed; the bucket will be reset on
-    // the next recordAttempt() call.
-    return true;
-  }
-
-  return bucket.count < limitForKey(key);
+  if (now - bucket.windowStart >= WINDOW_MS) return true;
+  return bucket.count < limit;
 }
 
-/** Record a failed attempt, sliding/starting the 15-minute window as needed. */
-export function recordAttempt(key: string): void {
-  const now = Date.now();
-  const bucket = buckets.get(key);
-
+/** Pure: the bucket after recording one failed attempt at time `now`. */
+export function nextBucket(bucket: Bucket | null, now: number): Bucket {
   if (!bucket || now - bucket.windowStart >= WINDOW_MS) {
-    buckets.set(key, { count: 1, windowStart: now });
-    return;
+    return { count: 1, windowStart: now };
   }
-
-  bucket.count += 1;
+  return { count: bucket.count + 1, windowStart: bucket.windowStart };
 }
 
-/** Clear attempts for a key (e.g. on successful login). */
-export function clearAttempts(key: string): void {
-  buckets.delete(key);
+async function loadBucket(key: string): Promise<Bucket | null> {
+  const row = await prisma.loginRateLimit.findUnique({ where: { key } });
+  if (!row) return null;
+  return { count: row.count, windowStart: row.windowStart.getTime() };
 }
 
-/** Test-only: wipe all rate-limit state. */
-export function resetRateLimitStore(): void {
-  buckets.clear();
+/** Returns true if the caller is still under the limit. Does NOT record. */
+export async function checkRateLimit(key: string): Promise<boolean> {
+  const bucket = await loadBucket(key);
+  return isAllowed(bucket, Date.now(), limitForKey(key));
+}
+
+/** Record a failed attempt, starting/advancing the 15-minute window. */
+export async function recordAttempt(key: string): Promise<void> {
+  const now = Date.now();
+  const bucket = await loadBucket(key);
+  const nb = nextBucket(bucket, now);
+  const windowStart = new Date(nb.windowStart);
+  await prisma.loginRateLimit.upsert({
+    where: { key },
+    create: { key, count: nb.count, windowStart },
+    update: { count: nb.count, windowStart },
+  });
+}
+
+/** Clear a key (e.g. on successful login). */
+export async function clearAttempts(key: string): Promise<void> {
+  await prisma.loginRateLimit.deleteMany({ where: { key } });
 }

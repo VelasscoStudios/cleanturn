@@ -100,6 +100,16 @@ model Job {
   @@index([status, paid])
 }
 
+// Durable login rate-limit buckets. Persisted (not in-process memory) so the
+// limit survives restarts and is shared across any worker on the same DB —
+// there is no in-memory window an attacker can reset, and no unbounded Map.
+model LoginRateLimit {
+  key         String   @id
+  count       Int
+  windowStart DateTime
+  updatedAt   DateTime @updatedAt
+}
+
 model NotificationLog {
   id        String   @id @default(cuid())
   jobId     String?

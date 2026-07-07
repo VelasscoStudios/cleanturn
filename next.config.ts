@@ -1,22 +1,8 @@
 import type { NextConfig } from "next";
 
-// Next.js hydration relies on inline scripts, and dev-mode react-refresh needs eval.
-const scriptSrc =
-  process.env.NODE_ENV === "development"
-    ? "'self' 'unsafe-inline' 'unsafe-eval'"
-    : "'self' 'unsafe-inline'";
-
-const csp = [
-  "default-src 'self'",
-  `script-src ${scriptSrc}`,
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data:",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "frame-ancestors 'none'",
-  "form-action 'self'",
-].join("; ");
-
+// Static response headers applied to every route. The Content-Security-Policy
+// is NOT set here — it carries a per-request nonce and is set in middleware.ts
+// so scripts need no 'unsafe-inline'.
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
@@ -27,7 +13,6 @@ const securityHeaders = [
     key: "Strict-Transport-Security",
     value: "max-age=63072000; includeSubDomains; preload",
   },
-  { key: "Content-Security-Policy", value: csp },
 ];
 
 const nextConfig: NextConfig = {

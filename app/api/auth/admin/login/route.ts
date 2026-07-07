@@ -55,24 +55,24 @@ export async function POST(req: Request) {
   const ipKey = rateLimitKey(ip, email);
   const idKey = identifierKey(email);
 
-  if (!checkRateLimit(ipKey) || !checkRateLimit(idKey)) {
-    return NextResponse.json({ error: GENERIC_ERROR }, { status: 429 });
-  }
-
   try {
+    if (!(await checkRateLimit(ipKey)) || !(await checkRateLimit(idKey))) {
+      return NextResponse.json({ error: GENERIC_ERROR }, { status: 429 });
+    }
+
     const admin = await prisma.adminUser.findUnique({ where: { email } });
     // Always run a bcrypt comparison (against a dummy hash when the account is
     // absent) so the response time does not reveal whether the email exists.
     const match = await bcrypt.compare(password, admin?.passwordHash ?? DUMMY_HASH);
 
     if (!admin || !match) {
-      recordAttempt(ipKey);
-      recordAttempt(idKey);
+      await recordAttempt(ipKey);
+      await recordAttempt(idKey);
       return NextResponse.json({ error: GENERIC_ERROR }, { status: 401 });
     }
 
-    clearAttempts(ipKey);
-    clearAttempts(idKey);
+    await clearAttempts(ipKey);
+    await clearAttempts(idKey);
     await createSession({ role: "admin", id: admin.id });
     return NextResponse.json({ ok: true, role: "admin" });
   } catch {
