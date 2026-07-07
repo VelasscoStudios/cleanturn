@@ -108,6 +108,8 @@ model LoginRateLimit {
   count       Int
   windowStart DateTime
   updatedAt   DateTime @updatedAt
+
+  @@index([windowStart])
 }
 
 model NotificationLog {

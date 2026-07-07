@@ -10,27 +10,25 @@
  *      force against one account (e.g. a 6-digit cleaner PIN) no matter how
  *      many source IPs are spoofed.
  *
- * Persisting the buckets (rather than an in-process Map) means the window
- * survives process restarts, is shared across every worker on the same DB,
- * and cannot grow unbounded in memory. The decision/advancement logic is kept
- * as pure functions (isAllowed / nextBucket) so it is unit-tested without a DB.
+ * Concurrency: registerAttempt() increments with a single atomic
+ * `INSERT ... ON CONFLICT ... RETURNING` statement — NOT a read-modify-write —
+ * so a burst of parallel attempts cannot lose increments and slip past the cap.
+ * Persisting to the DB (rather than an in-process Map) means the window
+ * survives restarts and is shared across workers; expired rows are evicted on
+ * each call so neither memory nor disk grows without bound.
  *
- * Usage in a route handler:
- *   if (!(await checkRateLimit(ipKey)) || !(await checkRateLimit(idKey))) return 429
+ * Usage in a route handler (record-then-check at the gate, before bcrypt):
+ *   const ipOk = await registerAttempt(ipKey);
+ *   const idOk = await registerAttempt(idKey);
+ *   if (!ipOk || !idOk) return 429
  *   ... attempt auth ...
- *   if (failed) { await recordAttempt(ipKey); await recordAttempt(idKey); }
- *   else { await clearAttempts(ipKey); await clearAttempts(idKey); }
+ *   if (success) { await clearAttempts(ipKey); await clearAttempts(idKey); }
  */
 import { prisma } from "./db";
 
 export const MAX_ATTEMPTS = 5;
 export const MAX_ATTEMPTS_PER_IDENTIFIER = 20;
 export const WINDOW_MS = 15 * 60 * 1000;
-
-export type Bucket = {
-  count: number;
-  windowStart: number; // epoch ms
-};
 
 /** Build a stable rate-limit key from an IP address and an identifier (email/phone). */
 export function rateLimitKey(ip: string, identifier: string): string {
@@ -42,51 +40,37 @@ export function identifierKey(identifier: string): string {
   return `id:${identifier.toLowerCase()}`;
 }
 
+/** The attempt cap for a key: the higher global cap for identifier-only keys. */
 export function limitForKey(key: string): number {
   return key.startsWith("id:") ? MAX_ATTEMPTS_PER_IDENTIFIER : MAX_ATTEMPTS;
 }
 
 /**
- * Pure decision: is a caller holding `bucket` allowed to attempt at time `now`
- * under `limit`? A missing bucket or an expired window means allowed.
+ * Atomically record one failed-or-pending attempt against `key` and report
+ * whether it is still within the limit for the current 15-minute window.
+ * Returns true if allowed, false if this attempt exceeds the cap.
  */
-export function isAllowed(bucket: Bucket | null, now: number, limit: number): boolean {
-  if (!bucket) return true;
-  if (now - bucket.windowStart >= WINDOW_MS) return true;
-  return bucket.count < limit;
-}
+export async function registerAttempt(key: string): Promise<boolean> {
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - WINDOW_MS);
 
-/** Pure: the bucket after recording one failed attempt at time `now`. */
-export function nextBucket(bucket: Bucket | null, now: number): Bucket {
-  if (!bucket || now - bucket.windowStart >= WINDOW_MS) {
-    return { count: 1, windowStart: now };
-  }
-  return { count: bucket.count + 1, windowStart: bucket.windowStart };
-}
+  // Evict every expired window: bounds the table AND resets this key's own
+  // expired window in the same sweep, so the ON CONFLICT below only ever
+  // increments a still-live window (never an expired one).
+  await prisma.loginRateLimit.deleteMany({ where: { windowStart: { lt: cutoff } } });
 
-async function loadBucket(key: string): Promise<Bucket | null> {
-  const row = await prisma.loginRateLimit.findUnique({ where: { key } });
-  if (!row) return null;
-  return { count: row.count, windowStart: row.windowStart.getTime() };
-}
-
-/** Returns true if the caller is still under the limit. Does NOT record. */
-export async function checkRateLimit(key: string): Promise<boolean> {
-  const bucket = await loadBucket(key);
-  return isAllowed(bucket, Date.now(), limitForKey(key));
-}
-
-/** Record a failed attempt, starting/advancing the 15-minute window. */
-export async function recordAttempt(key: string): Promise<void> {
-  const now = Date.now();
-  const bucket = await loadBucket(key);
-  const nb = nextBucket(bucket, now);
-  const windowStart = new Date(nb.windowStart);
-  await prisma.loginRateLimit.upsert({
-    where: { key },
-    create: { key, count: nb.count, windowStart },
-    update: { count: nb.count, windowStart },
-  });
+  // Single atomic statement: create the row (count 1) or increment it. No
+  // read-modify-write, so concurrent attempts each get a distinct final count.
+  const rows = await prisma.$queryRaw<Array<{ count: number | bigint }>>`
+    INSERT INTO "LoginRateLimit" ("key", "count", "windowStart", "updatedAt")
+    VALUES (${key}, 1, ${now}, ${now})
+    ON CONFLICT("key") DO UPDATE SET
+      "count" = "LoginRateLimit"."count" + 1,
+      "updatedAt" = ${now}
+    RETURNING "count" AS count
+  `;
+  const count = Number(rows[0]?.count ?? 1);
+  return count <= limitForKey(key);
 }
 
 /** Clear a key (e.g. on successful login). */

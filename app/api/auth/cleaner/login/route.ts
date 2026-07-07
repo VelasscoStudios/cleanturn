@@ -3,13 +3,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { createSession, assertFetchHeader } from "@/lib/auth";
-import {
-  checkRateLimit,
-  recordAttempt,
-  clearAttempts,
-  rateLimitKey,
-  identifierKey,
-} from "@/lib/ratelimit";
+import { registerAttempt, clearAttempts, rateLimitKey, identifierKey } from "@/lib/ratelimit";
 
 const bodySchema = z.object({
   phone: z.string().min(1).max(40),
@@ -53,7 +47,12 @@ export async function POST(req: Request) {
   const idKey = identifierKey(phone);
 
   try {
-    if (!(await checkRateLimit(ipKey)) || !(await checkRateLimit(idKey))) {
+    // Record-then-check atomically at the gate (before bcrypt) so every attempt
+    // is counted regardless of concurrency. Increment both keys, block if either
+    // exceeds its cap.
+    const ipOk = await registerAttempt(ipKey);
+    const idOk = await registerAttempt(idKey);
+    if (!ipOk || !idOk) {
       return NextResponse.json({ error: GENERIC_ERROR }, { status: 429 });
     }
 
@@ -63,11 +62,10 @@ export async function POST(req: Request) {
     const match = await bcrypt.compare(pin, usable?.pinHash ?? DUMMY_HASH);
 
     if (!usable || !match) {
-      await recordAttempt(ipKey);
-      await recordAttempt(idKey);
       return NextResponse.json({ error: GENERIC_ERROR }, { status: 401 });
     }
 
+    // Successful login: clear the attempt counters.
     await clearAttempts(ipKey);
     await clearAttempts(idKey);
     await createSession({ role: "cleaner", id: usable.id });
