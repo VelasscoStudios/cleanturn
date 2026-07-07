@@ -1,0 +1,112 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model AdminUser {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+}
+
+model Owner {
+  id           String     @id @default(cuid())
+  name         String
+  email        String
+  phone        String?
+  billingNotes String     @default("")
+  active       Boolean    @default(true)
+  properties   Property[]
+  createdAt    DateTime   @default(now())
+}
+
+model Property {
+  id             String    @id @default(cuid())
+  ownerId        String
+  owner          Owner     @relation(fields: [ownerId], references: [id])
+  nickname       String
+  address        String
+  icalUrl        String    @unique
+  cleanCostCents Int
+  directions     String    @default("")
+  mapsUrl        String?
+  accessCode     String    @default("")
+  arriveTime     String
+  outByTime      String
+  notes          String    @default("")
+  active         Boolean   @default(true)
+  syncStatus     String    @default("pending") // pending | ok | error
+  syncError      String?
+  lastSyncAt     DateTime?
+  bookings       Booking[]
+  jobs           Job[]
+  createdAt      DateTime  @default(now())
+}
+
+model Cleaner {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String   @unique
+  email     String?
+  pinHash   String
+  active    Boolean  @default(true)
+  jobs      Job[]
+  createdAt DateTime @default(now())
+}
+
+model Booking {
+  id           String   @id @default(cuid())
+  propertyId   String
+  property     Property @relation(fields: [propertyId], references: [id])
+  icalUid      String
+  checkinDate  String // YYYY-MM-DD
+  checkoutDate String // YYYY-MM-DD
+  status       String   @default("active") // active | cancelled
+  job          Job?
+  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now())
+
+  @@unique([propertyId, icalUid])
+}
+
+model Job {
+  id              String    @id @default(cuid())
+  bookingId       String    @unique
+  booking         Booking   @relation(fields: [bookingId], references: [id])
+  propertyId      String
+  property        Property  @relation(fields: [propertyId], references: [id])
+  date            String // YYYY-MM-DD, always = booking.checkoutDate
+  costCents       Int // snapshot of property.cleanCostCents at creation
+  cleanerId       String?
+  cleaner         Cleaner?  @relation(fields: [cleanerId], references: [id])
+  status          String    @default("unassigned") // unassigned|assigned|in_progress|awaiting_confirm|done|cancelled
+  sameDayTurnover Boolean   @default(false)
+  nextCheckinNote String?
+  arrivedAt       DateTime?
+  leftAt          DateTime?
+  cleanedAt       DateTime?
+  paid            Boolean   @default(false)
+  paidAt          DateTime?
+  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime  @default(now())
+
+  @@index([date])
+  @@index([cleanerId, date])
+  @@index([status, paid])
+}
+
+model NotificationLog {
+  id        String   @id @default(cuid())
+  jobId     String?
+  channel   String // console
+  recipient String
+  template  String // job_assigned | job_moved | job_cancelled | admin_alert
+  status    String // sent | failed
+  error     String?
+  createdAt DateTime @default(now())
+}

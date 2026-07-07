@@ -1,0 +1,10 @@
+node_modules
+.next
+dev.db*
+.env
+.env.*
+!.env.example
+lib/portfolio.local.json
+*.local.json
+tsconfig.tsbuildinfo
+.DS_Store

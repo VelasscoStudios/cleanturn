@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CleanTurn — MVP Prototype</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --card:#fff; --ink:#1a1d21; --muted:#6b7280; --line:#e5e7eb;
+    --brand:#0f766e; --brand-light:#ccfbf1;
+    --red:#dc2626; --red-bg:#fee2e2;
+    --amber:#b45309; --amber-bg:#fef3c7;
+    --blue:#1d4ed8; --blue-bg:#dbeafe;
+    --green:#15803d; --green-bg:#dcfce7;
+    --gray-bg:#f3f4f6;
+  }
+  *{box-sizing:border-box; margin:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--ink)}
+  .topbar{background:#0f172a; color:#fff; padding:10px 20px; display:flex; align-items:center; gap:16px; flex-wrap:wrap}
+  .topbar .logo{font-weight:700; font-size:17px}
+  .topbar .logo span{color:#5eead4}
+  .role-switch{margin-left:auto; display:flex; gap:6px; align-items:center; font-size:13px}
+  .role-switch button{background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:6px 14px; border-radius:20px; cursor:pointer; font-size:13px}
+  .role-switch button.active{background:#5eead4; color:#0f172a; border-color:#5eead4; font-weight:600}
+  .proto-note{background:#fef9c3; color:#713f12; font-size:12px; text-align:center; padding:6px}
+
+  /* ---------- ADMIN ---------- */
+  .admin{max-width:1000px; margin:0 auto; padding:20px 16px}
+  .tabs{display:flex; gap:4px; margin-bottom:16px; border-bottom:1px solid var(--line)}
+  .tabs button{background:none; border:none; padding:10px 16px; font-size:14px; cursor:pointer; color:var(--muted); border-bottom:2px solid transparent}
+  .tabs button.active{color:var(--brand); border-bottom-color:var(--brand); font-weight:600}
+  .alert{background:var(--red-bg); color:var(--red); padding:10px 14px; border-radius:10px; font-size:14px; font-weight:600; margin-bottom:14px; display:flex; align-items:center; gap:8px}
+  .filters{display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap}
+  .filters select,.filters label{font-size:13px; padding:7px 10px; border-radius:8px; border:1px solid var(--line); background:#fff; color:var(--ink)}
+  .filters label{display:flex; align-items:center; gap:6px; cursor:pointer}
+  .day-group{margin-bottom:20px}
+  .day-head{font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:8px}
+  .day-head .today-tag{background:var(--brand); color:#fff; border-radius:6px; padding:2px 8px; margin-left:8px; font-size:11px}
+  .job{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:8px; display:grid; grid-template-columns:1fr auto auto; gap:10px; align-items:center}
+  .job.unassigned{border-left:4px solid var(--red)}
+  .job .prop{font-weight:600; font-size:15px}
+  .job .addr{font-size:13px; color:var(--muted); margin-top:2px}
+  .job .meta{font-size:12px; color:var(--muted); margin-top:4px; display:flex; gap:10px; flex-wrap:wrap}
+  .flag{background:var(--amber-bg); color:var(--amber); font-weight:700; padding:2px 8px; border-radius:6px; font-size:11px}
+  .chip{font-size:12px; font-weight:600; padding:4px 10px; border-radius:20px; white-space:nowrap; text-align:center}
+  .chip.unassigned{background:var(--red-bg); color:var(--red)}
+  .chip.assigned{background:var(--blue-bg); color:var(--blue)}
+  .chip.in_progress{background:var(--amber-bg); color:var(--amber)}
+  .chip.awaiting{background:#ede9fe; color:#6d28d9}
+  .chip.done{background:var(--green-bg); color:var(--green)}
+  .job select{padding:7px 8px; border-radius:8px; border:1px solid var(--line); font-size:13px; min-width:130px; background:#fff}
+  .job select.empty{border-color:var(--red); color:var(--red)}
+  .toast{position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#0f172a; color:#fff; padding:10px 18px; border-radius:10px; font-size:13px; opacity:0; transition:opacity .3s; pointer-events:none; z-index:50; max-width:90%}
+  .toast.show{opacity:1}
+
+  /* properties & cleaners tabs */
+  table{width:100%; border-collapse:collapse; background:#fff; border-radius:12px; overflow:hidden; font-size:14px}
+  th,td{text-align:left; padding:10px 14px; border-bottom:1px solid var(--line)}
+  th{font-size:12px; text-transform:uppercase; color:var(--muted); letter-spacing:.04em; background:var(--gray-bg)}
+  .ok{color:var(--green); font-weight:600; font-size:12px}
+  .err{color:var(--red); font-weight:600; font-size:12px}
+  .add-btn{margin-bottom:12px; background:var(--brand); color:#fff; border:none; padding:9px 16px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer}
+  .muted-note{font-size:12px; color:var(--muted); margin-top:10px}
+
+  /* ---------- CLEANER (phone frame) ---------- */
+  .cleaner-wrap{display:flex; justify-content:center; padding:24px 12px}
+  .phone{width:375px; max-width:100%; background:#fff; border-radius:28px; border:1px solid var(--line); box-shadow:0 10px 40px rgba(0,0,0,.12); overflow:hidden}
+  .phone-head{background:var(--brand); color:#fff; padding:18px 18px 14px}
+  .phone-head h2{font-size:18px}
+  .phone-head p{font-size:13px; opacity:.85; margin-top:2px}
+  .phone-body{padding:14px; min-height:480px; background:#fafafa}
+  .section-label{font-size:12px; font-weight:700; text-transform:uppercase; color:var(--muted); letter-spacing:.05em; margin:10px 0 8px}
+  .ccard{background:#fff; border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:10px}
+  .ccard .prop{font-weight:700; font-size:16px}
+  .ccard .addr{font-size:13px; color:var(--brand); margin-top:2px; text-decoration:underline; cursor:pointer}
+  .ccard .notes{font-size:13px; color:var(--muted); margin-top:6px; background:var(--gray-bg); padding:8px 10px; border-radius:8px; line-height:1.6}
+  .ccard .window{font-size:13px; margin-top:8px; background:var(--blue-bg); color:var(--blue); padding:6px 10px; border-radius:8px; font-weight:500}
+  .ccard .flagline{margin-top:8px}
+  .action-btn{width:100%; margin-top:12px; padding:14px; border:none; border-radius:12px; font-size:16px; font-weight:700; cursor:pointer; color:#fff}
+  .action-btn.arrive{background:var(--blue)}
+  .action-btn.leave{background:var(--amber)}
+  .action-btn.clean{background:var(--green)}
+  .action-btn.done{background:var(--green-bg); color:var(--green); cursor:default}
+  .cleaner-picker{padding:0 0 8px; display:flex; gap:6px; flex-wrap:wrap}
+  .cleaner-picker button{border:1px solid var(--line); background:#fff; border-radius:20px; padding:6px 12px; font-size:12px; cursor:pointer}
+  .cleaner-picker button.active{background:var(--brand); color:#fff; border-color:var(--brand)}
+  .empty-state{text-align:center; color:var(--muted); font-size:14px; padding:40px 10px}
+
+  /* ---------- MODAL ---------- */
+  .modal-overlay{position:fixed; inset:0; background:rgba(15,23,42,.55); display:none; align-items:flex-start; justify-content:center; padding:30px 12px; z-index:40; overflow-y:auto}
+  .modal-overlay.open{display:flex}
+  .modal{background:#fff; border-radius:16px; width:520px; max-width:100%; padding:22px; box-shadow:0 20px 60px rgba(0,0,0,.25)}
+  .modal h3{font-size:17px; margin-bottom:2px}
+  .modal .sub{font-size:13px; color:var(--muted); margin-bottom:16px}
+  .fgroup{margin-bottom:12px}
+  .fgroup label{display:block; font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:4px}
+  .fgroup input,.fgroup textarea{width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px; font-size:14px; font-family:inherit}
+  .fgroup textarea{resize:vertical; min-height:54px}
+  .fgroup .hint{font-size:12px; color:var(--muted); margin-top:4px}
+  .frow{display:flex; gap:10px}
+  .frow .fgroup{flex:1}
+  .modal-actions{display:flex; gap:8px; justify-content:flex-end; margin-top:18px}
+  .modal-actions .cancel{background:#fff; border:1px solid var(--line); color:var(--ink); padding:9px 16px; border-radius:8px; font-size:13px; cursor:pointer}
+  .modal-actions .save{background:var(--brand); border:none; color:#fff; padding:9px 18px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer}
+  .ical-box{background:var(--brand-light); border:1px solid #99f6e4; border-radius:8px; padding:10px 12px; font-size:12px; color:#134e4a; margin-bottom:12px; line-height:1.5}
+  tr.clickable{cursor:pointer}
+  tr.clickable:hover{background:#f9fafb}
+
+  /* ---------- BILLING ---------- */
+  .owner-group{background:#fff; border:1px solid var(--line); border-radius:12px; margin-bottom:14px; overflow:hidden}
+  .owner-head{display:flex; justify-content:space-between; align-items:center; gap:10px; padding:12px 14px; background:var(--gray-bg); border-bottom:1px solid var(--line); flex-wrap:wrap}
+  .owe{color:var(--red); font-weight:700; font-size:14px}
+  .mark-all{background:var(--green); color:#fff; border:none; padding:7px 12px; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer}
+  .mark-one{background:#fff; color:var(--green); border:1px solid var(--green); padding:5px 10px; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer}
+  .bill-row{display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 14px; border-bottom:1px solid var(--line); font-size:14px; flex-wrap:wrap}
+  .bill-row:last-child{border-bottom:none}
+  @media(max-width:640px){ .job{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">Clean<span>Turn</span></div>
+  <div class="role-switch">
+    <span style="opacity:.6">View as:</span>
+    <button id="btnAdmin" class="active" onclick="setRole('admin')">👔 Admin (You)</button>
+    <button id="btnCleaner" onclick="setRole('cleaner')">🧹 Cleaner</button>
+  </div>
+</div>
+<div class="proto-note">⚡ Clickable prototype — sample data. Assign cleaners in Admin view, then switch to Cleaner view to tap through job statuses.</div>
+
+<!-- ================= ADMIN ================= -->
+<div class="admin" id="adminView">
+  <div class="tabs">
+    <button class="active" onclick="setTab('schedule',this)">📅 Schedule</button>
+    <button onclick="setTab('billing',this)">💶 Billing</button>
+    <button onclick="setTab('properties',this)">🏠 Properties</button>
+    <button onclick="setTab('owners',this)">👤 Owners</button>
+    <button onclick="setTab('cleaners',this)">🧹 Cleaners</button>
+  </div>
+
+  <div id="tab-schedule">
+    <div class="alert" id="unassignedAlert"></div>
+    <div class="filters">
+      <select id="fProp" onchange="renderSchedule()"><option value="">All properties</option></select>
+      <select id="fCleaner" onchange="renderSchedule()"><option value="">All cleaners</option></select>
+      <label><input type="checkbox" id="fUnassigned" onchange="renderSchedule()"> Unassigned only</label>
+    </div>
+    <div id="scheduleList"></div>
+  </div>
+
+  <div id="tab-billing" style="display:none">
+    <div class="filters">
+      <select id="bOwner" onchange="renderBilling()"><option value="">All owners</option></select>
+      <select id="bStatus" onchange="renderBilling()">
+        <option value="unpaid">Unpaid</option>
+        <option value="paid">Paid</option>
+        <option value="">All</option>
+      </select>
+    </div>
+    <div id="billingList"></div>
+    <p class="muted-note">Only <b>completed</b> cleans are billable. Mark cleans paid one by one, or a whole owner at once when their transfer arrives.</p>
+  </div>
+
+  <div id="tab-owners" style="display:none">
+    <button class="add-btn" onclick="toast('In the real app this opens the Add Owner form (name, email, phone, billing notes)')">+ Add owner</button>
+    <table>
+      <thead><tr><th>Owner</th><th>Contact</th><th>Properties</th><th>Billing notes</th><th>Outstanding</th></tr></thead>
+      <tbody id="ownerTable"></tbody>
+    </table>
+  </div>
+
+  <div id="tab-properties" style="display:none">
+    <button class="add-btn" onclick="openPropModal()">+ Add property</button>
+    <table>
+      <thead><tr><th>Nickname</th><th>Owner</th><th>Address</th><th>€/clean</th><th>Window</th><th>Access</th><th>iCal sync</th></tr></thead>
+      <tbody id="propTable"></tbody>
+    </table>
+    <p class="muted-note">Click any row to edit. Feeds re-sync every 30 min. A failing feed shows a red badge and emails you after 6h.</p>
+  </div>
+
+  <div id="tab-cleaners" style="display:none">
+    <button class="add-btn" onclick="toast('In the real app this opens the Add Cleaner form (name, WhatsApp number, email, PIN)')">+ Add cleaner</button>
+    <table>
+      <thead><tr><th>Name</th><th>WhatsApp</th><th>Login</th><th>Status</th></tr></thead>
+      <tbody id="cleanerTable"></tbody>
+    </table>
+    <p class="muted-note">Cleaners log in with phone + PIN. They only ever see their own jobs.</p>
+  </div>
+</div>
+
+<!-- ================= CLEANER ================= -->
+<div class="cleaner-wrap" id="cleanerView" style="display:none">
+  <div style="width:375px; max-width:100%">
+    <div class="cleaner-picker" id="cleanerPicker"></div>
+    <div class="phone">
+      <div class="phone-head">
+        <h2 id="cHeadName">My Cleans</h2>
+        <p id="cHeadSub"></p>
+      </div>
+      <div class="phone-body" id="cleanerJobs"></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- ================= ADD/EDIT PROPERTY MODAL ================= -->
+<div class="modal-overlay" id="propModal">
+  <div class="modal">
+    <h3 id="pmTitle">Add property</h3>
+    <p class="sub">Everything the app needs to sync bookings and brief the cleaner.</p>
+
+    <div class="frow">
+      <div class="fgroup"><label>Owner (pays for cleans)</label><select id="pmOwner" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:14px;background:#fff"></select></div>
+      <div class="fgroup"><label>Nickname</label><input id="pmNick" placeholder="e.g. Sunset Loft"></div>
+    </div>
+    <div class="fgroup"><label>Address</label><input id="pmAddr" placeholder="Street, number, unit"></div>
+
+    <div class="fgroup">
+      <label>Airbnb calendar link (iCal URL)</label>
+      <input id="pmIcal" placeholder="https://www.airbnb.com/calendar/ical/12345678.ics?s=…">
+      <div class="hint">Bookings sync from this link automatically every 30 min.</div>
+    </div>
+    <div class="ical-box">
+      <b>Where to find it:</b> Airbnb → Calendar for this listing → <b>Availability</b> → <b>Connect calendars</b> → <b>Export calendar</b> → copy the link. Each listing has its own link.
+    </div>
+
+    <div class="frow">
+      <div class="fgroup"><label>Cost per clean (€)</label><input id="pmCost" type="number" placeholder="65"></div>
+      <div class="fgroup"><label>Arrive from</label><input id="pmArrive" type="time" value="11:00"></div>
+      <div class="fgroup"><label>Must be out by</label><input id="pmOutBy" type="time" value="16:00"></div>
+    </div>
+
+    <div class="fgroup"><label>Security / access code</label><input id="pmCode" placeholder="e.g. Lockbox 0455, alarm 8821#"></div>
+    <div class="fgroup"><label>Directions</label><textarea id="pmDirs" placeholder="Parking, entrance, landmarks… e.g. Blue gate behind the bakery"></textarea></div>
+    <div class="fgroup"><label>Notes for cleaner</label><textarea id="pmNotes" placeholder="Linen location, supplies, quirks…"></textarea></div>
+
+    <div class="modal-actions">
+      <button class="cancel" onclick="closePropModal()">Cancel</button>
+      <button class="save" onclick="saveProperty()">Save property</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const cleaners = [
+  {id:1, name:"Maria",  phone:"+1 555-0101"},
+  {id:2, name:"Sofia",  phone:"+1 555-0102"},
+  {id:3, name:"Ana",    phone:"+1 555-0103"},
+  {id:4, name:"Lucia",  phone:"+1 555-0104"},
+  {id:5, name:"Carmen", phone:"+1 555-0105"},
+];
+const owners = [
+  {id:1, name:"David Kim",     email:"david.kim@mail.com",  phone:"+1 555-0201", billing:"Pays monthly by bank transfer"},
+  {id:2, name:"Elena Rossi",   email:"elena.r@mail.com",    phone:"+1 555-0202", billing:"Pays per clean, Revolut"},
+  {id:3, name:"Mueller Family",email:"j.mueller@mail.com",  phone:"+1 555-0203", billing:"Invoice at month end"},
+];
+const icalFor = n => `https://www.airbnb.com/calendar/ical/5501${n}482.ics?s=8f3e${n}a1c`;
+const properties = [
+  {id:1, nick:"Sunset Loft",   addr:"142 Sunset Blvd, Apt 3B", cost:65, code:"Door 4821#",        arrive:"11:00", outBy:"15:00", dirs:"Entrance on side street; free parking behind building", sync:"ok",  notes:"Linen in hall closet."},
+  {id:2, nick:"Palm Villa",    addr:"88 Palm Grove Dr",        cost:90, code:"Lockbox 0455",      arrive:"10:00", outBy:"14:00", dirs:"Gravel driveway after the white fence; park inside gate", sync:"ok",  notes:"Pool towels ×6."},
+  {id:3, nick:"Marina Studio", addr:"7 Marina Walk, Unit 12",  cost:50, code:"Fob at front desk", arrive:"10:00", outBy:"15:00", dirs:"Paid parking only — use marina lot, 2h free with fob", sync:"ok",  notes:"Ask desk for unit 12 fob."},
+  {id:4, nick:"Old Town 2BR",  addr:"23 Cathedral Ln",         cost:75, code:"Key safe 2210#",    arrive:"11:00", outBy:"16:00", dirs:"Pedestrian street — park at Plaza garage, 5 min walk", sync:"err", notes:"Steep stairs — vacuum stays upstairs."},
+  {id:5, nick:"Garden House",  addr:"310 Rosemary St",         cost:85, code:"Gate 7712 / Door 3390#", arrive:"11:00", outBy:"16:00", dirs:"Blue gate behind the bakery; ring bell if code fails", sync:"ok", notes:"Water plants on terrace."},
+  {id:6, nick:"Beach Flat 5",  addr:"5 Shoreline Ave, #5",     cost:60, code:"Lockbox 8841",      arrive:"11:00", outBy:"15:00", dirs:"Street parking on Shoreline Ave; entrance faces beach", sync:"ok",  notes:"Sand: mop twice."},
+];
+properties.forEach(p=>p.ical = icalFor(p.id));
+const ownerOf = {1:1, 2:1, 3:2, 4:2, 5:3, 6:3};
+properties.forEach(p=>p.owner = ownerOf[p.id]);
+// dates relative to "today" in prototype
+const today = new Date();
+const d = o => { const t = new Date(today); t.setDate(t.getDate()+o); return t; };
+const fmt = dt => dt.toLocaleDateString(undefined,{weekday:'long', month:'short', day:'numeric'});
+const key = dt => dt.toISOString().slice(0,10);
+
+let jobs = [
+  // completed cleans from earlier this month (these appear in Billing)
+  {id:101, prop:1, date:d(-9), out:"11:00", sameDay:false, nextIn:null, cleaner:1, status:"done", paid:true},
+  {id:102, prop:2, date:d(-7), out:"10:00", sameDay:false, nextIn:null, cleaner:1, status:"done", paid:true},
+  {id:103, prop:1, date:d(-5), out:"11:00", sameDay:false, nextIn:null, cleaner:3, status:"done", paid:false},
+  {id:104, prop:3, date:d(-4), out:"10:00", sameDay:false, nextIn:null, cleaner:2, status:"done", paid:false},
+  {id:105, prop:5, date:d(-3), out:"12:00", sameDay:false, nextIn:null, cleaner:5, status:"done", paid:false},
+  {id:106, prop:4, date:d(-2), out:"11:00", sameDay:false, nextIn:null, cleaner:3, status:"done", paid:false},
+  {id:107, prop:6, date:d(-1), out:"11:00", sameDay:false, nextIn:null, cleaner:4, status:"done", paid:false},
+  // current schedule
+  {id:1, prop:1, date:d(0), out:"11:00", sameDay:true,  nextIn:"15:00", cleaner:1,   status:"assigned",   paid:false},
+  {id:2, prop:3, date:d(0), out:"10:00", sameDay:false, nextIn:null,    cleaner:2,   status:"in_progress",paid:false},
+  {id:3, prop:5, date:d(0), out:"12:00", sameDay:true,  nextIn:"16:00", cleaner:null,status:"unassigned", paid:false},
+  {id:4, prop:6, date:d(0), out:"11:00", sameDay:false, nextIn:null,    cleaner:4,   status:"done",       paid:false},
+  {id:5, prop:2, date:d(1), out:"10:00", sameDay:true,  nextIn:"14:00", cleaner:1,   status:"assigned",   paid:false},
+  {id:6, prop:4, date:d(1), out:"11:00", sameDay:false, nextIn:null,    cleaner:null,status:"unassigned", paid:false},
+  {id:7, prop:1, date:d(2), out:"11:00", sameDay:false, nextIn:null,    cleaner:null,status:"unassigned", paid:false},
+  {id:8, prop:3, date:d(2), out:"10:00", sameDay:true,  nextIn:"15:00", cleaner:2,   status:"assigned",   paid:false},
+  {id:9, prop:6, date:d(3), out:"11:00", sameDay:false, nextIn:null,    cleaner:4,   status:"assigned",   paid:false},
+];
+
+const P = id => properties.find(p=>p.id===id);
+const C = id => cleaners.find(c=>c.id===id);
+const statusLabel = {unassigned:"Unassigned", assigned:"Assigned", in_progress:"In progress", awaiting:"Left · awaiting confirm", done:"Done ✅"};
+const chipClass = s => s==="awaiting" ? "awaiting" : s;
+
+let activeCleaner = 1;
+
+function setRole(r){
+  document.getElementById('adminView').style.display = r==='admin' ? '' : 'none';
+  document.getElementById('cleanerView').style.display = r==='cleaner' ? '' : 'none';
+  document.getElementById('btnAdmin').classList.toggle('active', r==='admin');
+  document.getElementById('btnCleaner').classList.toggle('active', r==='cleaner');
+  if(r==='cleaner') renderCleaner();
+}
+function setTab(t, btn){
+  ['schedule','billing','properties','owners','cleaners'].forEach(x=>document.getElementById('tab-'+x).style.display = x===t?'':'none');
+  document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  if(t==='billing') renderBilling();
+  if(t==='owners') renderOwners();
+}
+function toast(msg){
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(el._t); el._t = setTimeout(()=>el.classList.remove('show'), 3200);
+}
+
+/* ---- admin schedule ---- */
+function renderSchedule(){
+  const fp = document.getElementById('fProp').value;
+  const fc = document.getElementById('fCleaner').value;
+  const fu = document.getElementById('fUnassigned').checked;
+  let list = jobs.filter(j =>
+    key(j.date) >= key(today) &&
+    (!fp || j.prop==fp) &&
+    (!fc || j.cleaner==fc) &&
+    (!fu || !j.cleaner)
+  );
+  const groups = {};
+  list.forEach(j=>{ (groups[key(j.date)] = groups[key(j.date)]||[]).push(j); });
+  const container = document.getElementById('scheduleList');
+  container.innerHTML = Object.keys(groups).sort().map(k=>{
+    const dt = new Date(k+'T12:00:00');
+    const isToday = k===key(today);
+    return `<div class="day-group">
+      <div class="day-head">${fmt(dt)}${isToday?'<span class="today-tag">TODAY</span>':''}</div>
+      ${groups[k].map(jobRow).join('')}
+    </div>`;
+  }).join('') || '<div class="empty-state">No cleans match these filters.</div>';
+
+  const un = jobs.filter(j=>!j.cleaner && (j.date-today)/864e5 < 2).length;
+  const alertEl = document.getElementById('unassignedAlert');
+  if(un>0){ alertEl.style.display='flex'; alertEl.innerHTML = `⚠️ ${un} unassigned clean${un>1?'s':''} in the next 48 hours`; }
+  else { alertEl.style.display='flex'; alertEl.style.background='var(--green-bg)'; alertEl.style.color='var(--green)'; alertEl.innerHTML = '✅ All cleans in the next 48h are assigned'; }
+}
+function jobRow(j){
+  const p = P(j.prop);
+  return `<div class="job ${!j.cleaner?'unassigned':''}">
+    <div>
+      <div class="prop">${p.nick} ${j.sameDay?`<span class="flag">⚡ SAME-DAY · guest in at ${j.nextIn}</span>`:''}</div>
+      <div class="addr">${p.addr}</div>
+      <div class="meta"><span>⏰ ${p.arrive} → out by ${p.outBy}</span><span>💶 €${p.cost}</span><span>🔑 ${p.code}</span></div>
+    </div>
+    <select class="${!j.cleaner?'empty':''}" onchange="assign(${j.id}, this.value)">
+      <option value="">— Assign cleaner —</option>
+      ${cleaners.map(c=>`<option value="${c.id}" ${j.cleaner===c.id?'selected':''}>${c.name}</option>`).join('')}
+    </select>
+    <span class="chip ${chipClass(j.status)}">${statusLabel[j.status]}</span>
+  </div>`;
+}
+function assign(id, val){
+  const j = jobs.find(x=>x.id===id);
+  j.cleaner = val ? +val : null;
+  j.status = val ? (j.status==='unassigned' ? 'assigned' : j.status) : 'unassigned';
+  renderSchedule();
+  if(val) toast(`📲 ${C(+val).name} notified on WhatsApp: "New clean: ${P(j.prop).nick}, ${fmt(j.date)}"`);
+}
+
+/* ---- cleaner view ---- */
+function renderCleaner(){
+  const picker = document.getElementById('cleanerPicker');
+  picker.innerHTML = '<span style="font-size:12px;color:var(--muted);align-self:center">Preview as:</span>' +
+    cleaners.map(c=>`<button class="${c.id===activeCleaner?'active':''}" onclick="activeCleaner=${c.id};renderCleaner()">${c.name}</button>`).join('');
+  const c = C(activeCleaner);
+  document.getElementById('cHeadName').textContent = `Hi ${c.name} 👋`;
+  const mine = jobs.filter(j=>j.cleaner===activeCleaner && j.status!=='cancelled');
+  const todays = mine.filter(j=>key(j.date)===key(today));
+  const upcoming = mine.filter(j=>key(j.date)>key(today)).sort((a,b)=>a.date-b.date);
+  document.getElementById('cHeadSub').textContent = `${todays.length} clean${todays.length!==1?'s':''} today · ${upcoming.length} upcoming`;
+  const body = document.getElementById('cleanerJobs');
+  body.innerHTML =
+    (todays.length? `<div class="section-label">Today</div>` + todays.map(cCard).join('') : '') +
+    (upcoming.length? `<div class="section-label">Upcoming</div>` + upcoming.map(cCard).join('') : '') +
+    (!todays.length && !upcoming.length ? '<div class="empty-state">🎉 No cleans assigned.<br>Enjoy the day off!</div>' : '');
+}
+function cCard(j){
+  const p = P(j.prop);
+  const isToday = key(j.date)===key(today);
+  let btn = '';
+  if(isToday){
+    if(j.status==='assigned')     btn = `<button class="action-btn arrive" onclick="advance(${j.id})">🚗 I've arrived</button>`;
+    if(j.status==='in_progress')  btn = `<button class="action-btn leave" onclick="advance(${j.id})">🚪 I've left</button>`;
+    if(j.status==='awaiting')     btn = `<button class="action-btn clean" onclick="advance(${j.id})">✨ Unit is clean</button>`;
+    if(j.status==='done')         btn = `<button class="action-btn done">✅ Done — nice work!</button>`;
+  } else {
+    btn = `<div style="font-size:13px;color:var(--muted);margin-top:10px">Scheduled for ${fmt(j.date)}</div>`;
+  }
+  return `<div class="ccard">
+    <div class="prop">${p.nick} <span style="float:right;color:var(--green);font-size:15px">€${p.cost}</span></div>
+    <div class="addr" onclick="toast('Opens Google Maps: ${p.addr}')">📍 ${p.addr}</div>
+    <div class="window">⏰ Arrive <b>${p.arrive}</b> — must be out by <b>${p.outBy}</b></div>
+    ${j.sameDay?`<div class="flagline"><span class="flag">⚡ Guest arrives today at ${j.nextIn} — finish before then</span></div>`:''}
+    <div class="notes">🧭 <b>Directions:</b> ${p.dirs}<br>🔑 <b>Access:</b> ${p.code}<br>📝 ${p.notes}</div>
+    ${btn}
+  </div>`;
+}
+function advance(id){
+  const j = jobs.find(x=>x.id===id);
+  const next = {assigned:'in_progress', in_progress:'awaiting', awaiting:'done'};
+  j.status = next[j.status] || j.status;
+  renderCleaner();
+  const msg = {in_progress:'Arrival logged', awaiting:'Departure logged', done:'Marked clean — the admin sees this on the dashboard ✅'}[j.status];
+  toast('⏱️ ' + msg);
+}
+
+/* ---- billing ---- */
+const O = id => owners.find(o=>o.id===id);
+const jobOwner = j => P(j.prop).owner;
+function renderBilling(){
+  const fo = document.getElementById('bOwner');
+  if(fo.options.length===1) owners.forEach(o=>fo.insertAdjacentHTML('beforeend',`<option value="${o.id}">${o.name}</option>`));
+  const ownerFilter = fo.value, statusFilter = document.getElementById('bStatus').value;
+  const billable = jobs.filter(j => j.status==='done'
+    && (!ownerFilter || jobOwner(j)==ownerFilter)
+    && (statusFilter==='' || (statusFilter==='paid') === !!j.paid));
+  const byOwner = {};
+  billable.forEach(j => (byOwner[jobOwner(j)] = byOwner[jobOwner(j)]||[]).push(j));
+  const el = document.getElementById('billingList');
+  el.innerHTML = Object.keys(byOwner).map(oid=>{
+    const o = O(+oid), list = byOwner[oid].sort((a,b)=>a.date-b.date);
+    const unpaid = list.filter(j=>!j.paid);
+    const total = unpaid.reduce((s,j)=>s+P(j.prop).cost,0);
+    return `<div class="owner-group">
+      <div class="owner-head">
+        <div><b>${o.name}</b> <span style="color:var(--muted);font-size:12px">· ${o.billing}</span></div>
+        <div style="display:flex;gap:10px;align-items:center">
+          ${unpaid.length?`<span class="owe">Owes €${total} (${unpaid.length} clean${unpaid.length>1?'s':''})</span>
+          <button class="mark-all" onclick="markAllPaid(${o.id})">✓ Mark all paid</button>`:`<span class="chip done">All settled ✅</span>`}
+        </div>
+      </div>
+      ${list.map(j=>{
+        const p = P(j.prop);
+        return `<div class="bill-row">
+          <div><b>${p.nick}</b> <span style="color:var(--muted)">· ${fmt(j.date)} · cleaned by ${j.cleaner?C(j.cleaner).name:'—'}</span></div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <b>€${p.cost}</b>
+            ${j.paid?'<span class="chip done">Paid</span>':`<button class="mark-one" onclick="markPaid(${j.id})">Mark paid</button>`}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).join('') || '<div class="empty-state">Nothing here — adjust the filters or complete some cleans.</div>';
+}
+function markPaid(id){
+  const j = jobs.find(x=>x.id===id); j.paid = true;
+  renderBilling(); renderOwners();
+  toast(`💶 €${P(j.prop).cost} marked paid — ${O(jobOwner(j)).name}`);
+}
+function markAllPaid(oid){
+  jobs.filter(j=>j.status==='done' && jobOwner(j)===oid && !j.paid).forEach(j=>j.paid=true);
+  renderBilling(); renderOwners();
+  toast(`💶 All cleans for ${O(oid).name} marked paid`);
+}
+
+/* ---- owners table ---- */
+function renderOwners(){
+  document.getElementById('ownerTable').innerHTML = owners.map(o=>{
+    const props = properties.filter(p=>p.owner===o.id);
+    const owed = jobs.filter(j=>j.status==='done' && !j.paid && jobOwner(j)===o.id)
+                     .reduce((s,j)=>s+P(j.prop).cost,0);
+    return `<tr>
+      <td><b>${o.name}</b></td>
+      <td>${o.email}<br><span style="color:var(--muted);font-size:12px">${o.phone}</span></td>
+      <td>${props.map(p=>p.nick).join(', ')}</td>
+      <td>${o.billing}</td>
+      <td>${owed?`<span class="err">€${owed} unpaid</span>`:'<span class="ok">€0</span>'}</td>
+    </tr>`;
+  }).join('');
+}
+
+/* ---- add/edit property modal ---- */
+let editingPropId = null;
+function openPropModal(id){
+  editingPropId = id || null;
+  const p = id ? P(id) : null;
+  document.getElementById('pmTitle').textContent = p ? `Edit ${p.nick}` : 'Add property';
+  document.getElementById('pmOwner').innerHTML = owners.map(o=>`<option value="${o.id}" ${p&&p.owner===o.id?'selected':''}>${o.name}</option>`).join('');
+  document.getElementById('pmNick').value   = p ? p.nick : '';
+  document.getElementById('pmAddr').value   = p ? p.addr : '';
+  document.getElementById('pmIcal').value   = p ? (p.ical||'') : '';
+  document.getElementById('pmCost').value   = p ? p.cost : '';
+  document.getElementById('pmArrive').value = p ? p.arrive : '11:00';
+  document.getElementById('pmOutBy').value  = p ? p.outBy : '16:00';
+  document.getElementById('pmCode').value   = p ? p.code : '';
+  document.getElementById('pmDirs').value   = p ? p.dirs : '';
+  document.getElementById('pmNotes').value  = p ? p.notes : '';
+  document.getElementById('propModal').classList.add('open');
+}
+function closePropModal(){ document.getElementById('propModal').classList.remove('open'); }
+document.getElementById('propModal').addEventListener('click', e=>{ if(e.target.id==='propModal') closePropModal(); });
+function saveProperty(){
+  const v = id => document.getElementById(id).value.trim();
+  if(!v('pmNick') || !v('pmAddr')){ toast('⚠️ Nickname and address are required'); return; }
+  if(!v('pmIcal')){ toast('⚠️ Paste the Airbnb iCal link — without it bookings cannot sync'); return; }
+  const data = { owner:+v('pmOwner'), nick:v('pmNick'), addr:v('pmAddr'), ical:v('pmIcal'), cost:+v('pmCost')||0,
+                 arrive:v('pmArrive'), outBy:v('pmOutBy'), code:v('pmCode'), dirs:v('pmDirs'), notes:v('pmNotes') };
+  if(editingPropId){
+    Object.assign(P(editingPropId), data);
+    toast(`✅ ${data.nick} updated`);
+  } else {
+    properties.push({ id: Math.max(...properties.map(p=>p.id))+1, sync:'ok', ...data });
+    toast(`✅ ${data.nick} added — calendar will sync within 30 min and cleans will appear on the schedule`);
+  }
+  closePropModal();
+  renderTables();
+  renderSchedule();
+}
+
+/* ---- admin tables ---- */
+function renderTables(){
+  document.getElementById('propTable').innerHTML = properties.map(p=>`<tr class="clickable" onclick="openPropModal(${p.id})" title="Click to edit">
+    <td><b>${p.nick}</b></td><td>${O(p.owner)?O(p.owner).name:'—'}</td><td>${p.addr}</td>
+    <td><b>€${p.cost}</b></td>
+    <td>${p.arrive}–${p.outBy}</td>
+    <td>${p.code}</td>
+    <td>${p.sync==='ok'?'<span class="ok">● Synced 12 min ago</span>':'<span class="err">● Feed error — check iCal URL</span>'}</td>
+  </tr>`).join('');
+  document.getElementById('cleanerTable').innerHTML = cleaners.map(c=>`<tr>
+    <td><b>${c.name}</b></td><td>${c.phone}</td><td>Phone + PIN</td><td><span class="ok">Active</span></td>
+  </tr>`).join('');
+  const fp = document.getElementById('fProp');
+  fp.innerHTML = '<option value="">All properties</option>' + properties.map(p=>`<option value="${p.id}">${p.nick}</option>`).join('');
+  const fc = document.getElementById('fCleaner');
+  fc.innerHTML = '<option value="">All cleaners</option>' + cleaners.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+}
+renderTables();
+renderSchedule();
+</script>
+</body>
+</html>

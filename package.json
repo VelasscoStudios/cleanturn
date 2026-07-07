@@ -1,0 +1,42 @@
+{
+  "name": "cleanturn",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3100",
+    "build": "next build",
+    "start": "next start -p 3100",
+    "seed": "tsx prisma/seed.ts",
+    "import:portfolio": "tsx prisma/import-portfolio.ts",
+    "test": "vitest run"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "overrides": {
+    "@js-temporal/polyfill": "npm:temporal-polyfill@^0.3.0",
+    "postcss": ">=8.5.10"
+  },
+  "dependencies": {
+    "next": "^15",
+    "react": "^19",
+    "react-dom": "^19",
+    "@prisma/client": "^6",
+    "iron-session": "^8",
+    "zod": "^3",
+    "bcryptjs": "^2",
+    "node-ical": "*"
+  },
+  "devDependencies": {
+    "prisma": "^6",
+    "typescript": "^5",
+    "@types/node": "*",
+    "@types/react": "*",
+    "@types/react-dom": "*",
+    "@types/bcryptjs": "*",
+    "tailwindcss": "^4",
+    "@tailwindcss/postcss": "^4",
+    "vitest": "^3",
+    "tsx": "*"
+  }
+}
