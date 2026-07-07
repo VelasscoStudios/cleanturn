@@ -79,12 +79,18 @@ export async function requireAdminApi(): Promise<SessionData | null> {
   const session = await getSession();
   if (!session || session.role !== "admin") return null;
   // Re-validate on every request: a sealed cookie can outlive its user. A
-  // deleted admin's 7-day cookie must not keep working.
-  const admin = await prisma.adminUser.findUnique({
-    where: { id: session.id },
-    select: { id: true },
-  });
-  if (!admin) return null;
+  // deleted admin's 7-day cookie must not keep working. Fail CLOSED on a DB
+  // error (return null / deny) rather than throwing — an unhandled throw here
+  // would turn every guarded route into a 500 during a DB blip.
+  try {
+    const admin = await prisma.adminUser.findUnique({
+      where: { id: session.id },
+      select: { id: true },
+    });
+    if (!admin) return null;
+  } catch {
+    return null;
+  }
   return session;
 }
 
@@ -93,12 +99,16 @@ export async function requireCleanerApi(): Promise<SessionData | null> {
   if (!session || session.role !== "cleaner") return null;
   // Re-validate existence AND active status: deactivating a cleaner must
   // immediately revoke their API access (incl. door/access codes), not wait
-  // for the 30-day cookie to expire.
-  const cleaner = await prisma.cleaner.findUnique({
-    where: { id: session.id },
-    select: { active: true },
-  });
-  if (!cleaner || !cleaner.active) return null;
+  // for the 30-day cookie to expire. Fail closed on a DB error.
+  try {
+    const cleaner = await prisma.cleaner.findUnique({
+      where: { id: session.id },
+      select: { active: true },
+    });
+    if (!cleaner || !cleaner.active) return null;
+  } catch {
+    return null;
+  }
   return session;
 }
 

@@ -47,8 +47,8 @@ export const jobStatusSchema = z.enum([
 export const scheduleQuerySchema = z.object({
   from: dateStrSchema.optional(),
   to: dateStrSchema.optional(),
-  propertyId: z.string().min(1).optional(),
-  cleanerId: z.string().min(1).optional(),
+  propertyId: z.string().min(1).max(64).optional(),
+  cleanerId: z.string().min(1).max(64).optional(),
   unassigned: z
     .union([z.literal("true"), z.literal("false")])
     .optional()
@@ -60,7 +60,7 @@ export type ScheduleQuery = z.infer<typeof scheduleQuerySchema>;
 // PATCH /api/jobs/[id]/assign
 // ---------------------------------------------------------------------------
 export const assignJobSchema = z.object({
-  cleanerId: z.string().min(1).nullable(),
+  cleanerId: z.string().min(1).max(64).nullable(),
 });
 export type AssignJobInput = z.infer<typeof assignJobSchema>;
 
@@ -84,7 +84,7 @@ export type SetJobPaidInput = z.infer<typeof setJobPaidSchema>;
 // GET /api/billing
 // ---------------------------------------------------------------------------
 export const billingQuerySchema = z.object({
-  ownerId: z.string().min(1).optional(),
+  ownerId: z.string().min(1).max(64).optional(),
   status: z.enum(["paid", "unpaid"]).optional(),
   month: monthStrSchema.optional(),
 });
@@ -94,7 +94,7 @@ export type BillingQuery = z.infer<typeof billingQuerySchema>;
 // POST /api/billing/mark-owner-paid
 // ---------------------------------------------------------------------------
 export const markOwnerPaidSchema = z.object({
-  ownerId: z.string().min(1),
+  ownerId: z.string().min(1).max(64),
   month: monthStrSchema.optional(),
 });
 export type MarkOwnerPaidInput = z.infer<typeof markOwnerPaidSchema>;

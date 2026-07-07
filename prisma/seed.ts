@@ -38,21 +38,27 @@ async function main() {
     return;
   }
 
+  // Fail CLOSED: the demo fallbacks below are published in this repo, so they
+  // are only acceptable when NODE_ENV is EXPLICITLY development/test. An unset
+  // or unexpected NODE_ENV (e.g. seeding a real DB from a bare shell) is
+  // treated as untrusted and must supply explicit, non-default credentials —
+  // this is the dangerous vector the guard must not depend on the operator to
+  // remember. Mirrors the fail-closed logic in lib/auth.ts.
+  const isLocalDev =
+    process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test";
   const isProduction = process.env.NODE_ENV === "production";
+  const PUBLISHED_DEFAULT_PASSWORD = "cleanturn-demo";
 
-  // The dev fallbacks below are published in this repo, so they are only
-  // acceptable on a local machine. In production both values must be set
-  // explicitly, and the password must not be a known default.
-  if (isProduction && (!process.env.ADMIN_EMAIL || !process.env.ADMIN_INITIAL_PASSWORD)) {
+  if (!isLocalDev && (!process.env.ADMIN_EMAIL || !process.env.ADMIN_INITIAL_PASSWORD)) {
     throw new Error(
-      "Refusing to seed in production without explicit ADMIN_EMAIL and ADMIN_INITIAL_PASSWORD env vars.",
+      "Refusing to seed outside development/test without explicit ADMIN_EMAIL and ADMIN_INITIAL_PASSWORD env vars.",
     );
   }
   const adminEmail = process.env.ADMIN_EMAIL || "admin@cleanturn.local";
-  const adminPassword = process.env.ADMIN_INITIAL_PASSWORD || "cleanturn-demo";
-  if (isProduction && (adminPassword === "cleanturn-demo" || adminPassword.length < 12)) {
+  const adminPassword = process.env.ADMIN_INITIAL_PASSWORD || PUBLISHED_DEFAULT_PASSWORD;
+  if (!isLocalDev && (adminPassword === PUBLISHED_DEFAULT_PASSWORD || adminPassword.length < 12)) {
     throw new Error(
-      "Refusing to seed in production: ADMIN_INITIAL_PASSWORD must be 12+ chars and not the published default.",
+      "Refusing to seed outside development/test: ADMIN_INITIAL_PASSWORD must be 12+ chars and not the published default.",
     );
   }
   const appUrl = process.env.APP_URL || "http://localhost:3100";
@@ -64,9 +70,11 @@ async function main() {
   console.log(`Created admin user: ${adminEmail}`);
 
   // Demo fixtures (cleaners with published PINs, fake owners/properties/jobs)
-  // must never reach a production database unless explicitly forced.
-  if (isProduction && process.env.SEED_DEMO !== "true") {
-    console.log("Production seed: admin user only (set SEED_DEMO=true to force demo fixtures).");
+  // must never reach a non-dev database unless explicitly forced. Fail closed:
+  // only auto-seed fixtures in explicit development/test.
+  void isProduction;
+  if (!isLocalDev && process.env.SEED_DEMO !== "true") {
+    console.log("Non-dev seed: admin user only (set SEED_DEMO=true to force demo fixtures).");
     return;
   }
 
