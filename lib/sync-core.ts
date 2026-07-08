@@ -148,6 +148,66 @@ export function reconcile(
 }
 
 /**
+ * Circuit breaker for broken feeds. A cancellation is inferred from a UID
+ * *disappearing* from the feed, so a feed that comes back empty or gutted
+ * (HTTP 200 with an error page, truncated body, changed SUMMARY wording) is
+ * indistinguishable from "everything got cancelled" — and once applied,
+ * cancellations are permanent (reconcile never reinstates a cancelled UID).
+ * Refuse to reconcile when the feed looks broken; the caller records it as a
+ * feed error so the existing 6h admin alert path picks it up.
+ *
+ * Returns a human-readable reason, or null when the reconcile looks safe.
+ */
+export function feedSafetyError(
+  existingBookings: ExistingBooking[],
+  parsedEventCount: number,
+  cancelCount: number,
+  todayStr: string
+): string | null {
+  const futureActive = existingBookings.filter(
+    (b) =>
+      b.status === "active" &&
+      b.checkoutDate >= todayStr &&
+      b.job !== null &&
+      b.job.status !== "cancelled"
+  ).length;
+
+  if (futureActive === 0) return null;
+
+  if (parsedEventCount === 0) {
+    return `feed returned 0 events while ${futureActive} future booking(s) are active; refusing to reconcile`;
+  }
+
+  // Guests cancel one at a time; a single run wiping out most of a calendar
+  // is far more likely a broken feed than a mass exodus. Threshold of 3 keeps
+  // small properties (1-2 future bookings) able to cancel legitimately.
+  if (cancelCount >= 3 && cancelCount * 2 > futureActive) {
+    return `feed would cancel ${cancelCount} of ${futureActive} future booking(s) in one run; refusing to reconcile`;
+  }
+
+  return null;
+}
+
+/**
+ * Coalesce concurrent invocations of an async task: while one run is in
+ * flight, further calls join it (receiving the same promise) instead of
+ * starting a second run. Once settled, the next call starts fresh.
+ */
+export function createCoalescer<T>(): (fn: () => Promise<T>) => Promise<T> {
+  let inFlight: Promise<T> | null = null;
+  return (fn) => {
+    if (inFlight) return inFlight;
+    const run = Promise.resolve()
+      .then(fn)
+      .finally(() => {
+        inFlight = null;
+      });
+    inFlight = run;
+    return run;
+  };
+}
+
+/**
  * Minimal job shape needed for same-day-turnover computation.
  */
 export type SameDayJobInput = {

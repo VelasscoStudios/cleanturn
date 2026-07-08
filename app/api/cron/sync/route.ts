@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import crypto from "node:crypto";
-import { runSync } from "@/lib/sync";
+import { runSyncExclusive } from "@/lib/sync";
 
 function constantTimeEquals(a: string, b: string): boolean {
   const bufA = Buffer.from(a);
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const counts = await runSync();
+    const counts = await runSyncExclusive();
     return NextResponse.json(counts, { status: 200 });
   } catch (err) {
     console.error("[cron/sync] runSync threw:", err);

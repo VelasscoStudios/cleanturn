@@ -4,6 +4,8 @@ import { parseIcs, type ParsedBookingEvent } from "./ical";
 import {
   reconcile,
   computeSameDay,
+  feedSafetyError,
+  createCoalescer,
   type ExistingBooking,
   type SameDayJobInput,
   type SameDayBookingInput,
@@ -207,33 +209,38 @@ async function applyCreates(
 ): Promise<number> {
   let count = 0;
   for (const c of creates) {
-    // Guard against a rare race/duplicate within the same run.
-    const existing = await prisma.booking.findUnique({
-      where: { propertyId_icalUid: { propertyId, icalUid: c.icalUid } },
-    });
-    if (existing) continue;
+    // Transactional so a mid-run kill (deploy restart) can't strand a booking
+    // without its job — every booking must have one.
+    const created = await prisma.$transaction(async (tx) => {
+      // Guard against a rare race/duplicate within the same run.
+      const existing = await tx.booking.findUnique({
+        where: { propertyId_icalUid: { propertyId, icalUid: c.icalUid } },
+      });
+      if (existing) return false;
 
-    const booking = await prisma.booking.create({
-      data: {
-        propertyId,
-        icalUid: c.icalUid,
-        checkinDate: c.checkinDate,
-        checkoutDate: c.checkoutDate,
-        status: "active",
-      },
+      const booking = await tx.booking.create({
+        data: {
+          propertyId,
+          icalUid: c.icalUid,
+          checkinDate: c.checkinDate,
+          checkoutDate: c.checkoutDate,
+          status: "active",
+        },
+      });
+
+      await tx.job.create({
+        data: {
+          bookingId: booking.id,
+          propertyId,
+          date: c.checkoutDate,
+          costCents: cleanCostCents,
+          status: "unassigned",
+        },
+      });
+      return true;
     });
 
-    await prisma.job.create({
-      data: {
-        bookingId: booking.id,
-        propertyId,
-        date: c.checkoutDate,
-        costCents: cleanCostCents,
-        status: "unassigned",
-      },
-    });
-
-    count++;
+    if (created) count++;
   }
   return count;
 }
@@ -249,33 +256,31 @@ async function applyMoves(
 ): Promise<number> {
   let count = 0;
   for (const m of moves) {
-    await prisma.booking.update({
-      where: { id: m.bookingId },
-      data: {
-        checkinDate: m.newCheckinDate,
-        checkoutDate: m.newCheckoutDate,
-      },
-    });
-
-    if (m.resetDoneJob) {
-      await prisma.job.update({
-        where: { id: m.jobId },
+    // Booking dates and job date/status must move together — transactional
+    // for the same kill-safety reason as applyCreates.
+    await prisma.$transaction([
+      prisma.booking.update({
+        where: { id: m.bookingId },
         data: {
-          date: m.newCheckoutDate,
-          status: "assigned",
-          arrivedAt: null,
-          leftAt: null,
-          cleanedAt: null,
+          checkinDate: m.newCheckinDate,
+          checkoutDate: m.newCheckoutDate,
         },
-      });
-    } else {
-      await prisma.job.update({
+      }),
+      prisma.job.update({
         where: { id: m.jobId },
-        data: {
-          date: m.newCheckoutDate,
-        },
-      });
-    }
+        data: m.resetDoneJob
+          ? {
+              date: m.newCheckoutDate,
+              status: "assigned",
+              arrivedAt: null,
+              leftAt: null,
+              cleanedAt: null,
+            }
+          : {
+              date: m.newCheckoutDate,
+            },
+      }),
+    ]);
 
     count++;
 
@@ -295,14 +300,16 @@ async function applyCancels(
 ): Promise<number> {
   let count = 0;
   for (const c of cancels) {
-    await prisma.booking.update({
-      where: { id: c.bookingId },
-      data: { status: "cancelled" },
-    });
-    await prisma.job.update({
-      where: { id: c.jobId },
-      data: { status: "cancelled" },
-    });
+    await prisma.$transaction([
+      prisma.booking.update({
+        where: { id: c.bookingId },
+        data: { status: "cancelled" },
+      }),
+      prisma.job.update({
+        where: { id: c.jobId },
+        data: { status: "cancelled" },
+      }),
+    ]);
     count++;
 
     if (c.hadAssignedCleaner) {
@@ -472,6 +479,12 @@ export async function runSync(): Promise<SyncCounts> {
 
       const { creates, moves, cancels } = reconcile(existingBookings, parsedEvents, today);
 
+      // Circuit breaker: an empty/gutted feed is indistinguishable from a
+      // mass cancellation, and applied cancels are permanent. Treat it as a
+      // feed error (recorded below, 6h admin alert) instead of applying.
+      const guardError = feedSafetyError(existingBookings, parsedEvents.length, cancels.length, today);
+      if (guardError) throw new Error(guardError);
+
       counts.created += await applyCreates(property.id, property.cleanCostCents, creates);
       counts.moved += await applyMoves(moves);
       counts.cancelled += await applyCancels(cancels);
@@ -522,5 +535,31 @@ export async function runSync(): Promise<SyncCounts> {
     console.error("[sync] admin unassigned-digest alert pass failed:", err);
   }
 
+  // One summary line in the app's own journal: the timer's curl can time out
+  // and log a failure while the run actually completes in-process, so the
+  // authoritative record must not depend on the HTTP response reaching curl.
+  console.log(
+    `[sync] done: created=${counts.created} moved=${counts.moved} cancelled=${counts.cancelled} errors=${counts.errors}`
+  );
+
   return counts;
+}
+
+// Coalescer lives on globalThis (same pattern as the prisma client) so dev
+// HMR re-evaluation can't mint a second lock. Assumes ONE node process — true
+// under the systemd unit (`next start`); if this app ever runs as a cluster,
+// this must become a cross-process lease instead.
+const globalForSync = globalThis as unknown as {
+  cleanturnSyncCoalescer?: (fn: () => Promise<SyncCounts>) => Promise<SyncCounts>;
+};
+
+/**
+ * The only entry point routes should call. While a sync is running, further
+ * calls (Sync-now button during a timer tick, overlapping timer ticks) join
+ * the in-flight run instead of interleaving a second reconcile over the same
+ * rows.
+ */
+export function runSyncExclusive(): Promise<SyncCounts> {
+  const coalesce = (globalForSync.cleanturnSyncCoalescer ??= createCoalescer<SyncCounts>());
+  return coalesce(runSync);
 }

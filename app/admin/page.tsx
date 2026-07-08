@@ -5,6 +5,7 @@ import { todayStr, addDays, fmtDay } from "@/lib/dates";
 import ScheduleFilters from "./_components/ScheduleFilters";
 import AssignSelect from "./_components/AssignSelect";
 import SyncNowButton from "./_components/SyncNowButton";
+import AutoRefresh from "./_components/AutoRefresh";
 import { formatCents } from "./_components/format";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -109,6 +110,7 @@ export default async function SchedulePage({
 
   return (
     <div className="admin">
+      <AutoRefresh />
       <SyncNowButton lastSyncedLabel={lastSyncedLabel} />
 
       {unassignedSoon > 0 ? (

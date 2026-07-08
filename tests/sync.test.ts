@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { parseIcs } from "../lib/ical";
-import { reconcile, computeSameDay, type ExistingBooking } from "../lib/sync-core";
+import {
+  reconcile,
+  computeSameDay,
+  feedSafetyError,
+  createCoalescer,
+  type ExistingBooking,
+} from "../lib/sync-core";
 
 const TODAY = "2026-07-06";
 
@@ -326,5 +332,109 @@ describe("computeSameDay", () => {
     ];
     const result = computeSameDay(jobs, activeBookings);
     expect(result[0].sameDayTurnover).toBe(false);
+  });
+});
+
+describe("feedSafetyError (mass-cancel circuit breaker)", () => {
+  function activeBooking(uid: string, checkout: string, jobStatus = "assigned"): ExistingBooking {
+    return {
+      id: `b-${uid}`,
+      icalUid: uid,
+      checkinDate: "2026-07-01",
+      checkoutDate: checkout,
+      status: "active",
+      job: { id: `j-${uid}`, status: jobStatus, cleanerId: null },
+    };
+  }
+
+  it("refuses an empty feed when future active bookings exist", () => {
+    const existing = [activeBooking("u1", "2026-07-10")];
+    const reason = feedSafetyError(existing, 0, 1, TODAY);
+    expect(reason).toMatch(/0 events/);
+  });
+
+  it("allows an empty feed when there is nothing future to protect", () => {
+    // Only past bookings — a genuinely empty calendar must still sync ok.
+    const existing = [activeBooking("u1", "2026-06-01")];
+    expect(feedSafetyError(existing, 0, 0, TODAY)).toBeNull();
+  });
+
+  it("allows an empty feed on a property with no bookings at all", () => {
+    expect(feedSafetyError([], 0, 0, TODAY)).toBeNull();
+  });
+
+  it("refuses a run that would cancel most of the future calendar", () => {
+    const existing = [
+      activeBooking("u1", "2026-07-10"),
+      activeBooking("u2", "2026-07-15"),
+      activeBooking("u3", "2026-07-20"),
+      activeBooking("u4", "2026-07-25"),
+    ];
+    // 3 of 4 cancelled in one run — feed almost certainly broken.
+    const reason = feedSafetyError(existing, 1, 3, TODAY);
+    expect(reason).toMatch(/cancel 3 of 4/);
+  });
+
+  it("allows small legitimate cancellations (1-2 in a run)", () => {
+    const existing = [
+      activeBooking("u1", "2026-07-10"),
+      activeBooking("u2", "2026-07-15"),
+    ];
+    expect(feedSafetyError(existing, 1, 1, TODAY)).toBeNull();
+    // Even both bookings of a tiny calendar: below the >=3 threshold.
+    expect(feedSafetyError(existing, 0, 2, TODAY)).toMatch(/0 events/); // empty feed still refused
+    expect(feedSafetyError(existing, 1, 2, TODAY)).toBeNull();
+  });
+
+  it("allows many cancels when they are a minority of a big calendar", () => {
+    const existing = Array.from({ length: 10 }, (_, i) =>
+      activeBooking(`u${i}`, "2026-07-20")
+    );
+    expect(feedSafetyError(existing, 7, 3, TODAY)).toBeNull();
+  });
+
+  it("does not count cancelled or past bookings toward the future-active base", () => {
+    const cancelled: ExistingBooking = {
+      ...activeBooking("u1", "2026-07-10"),
+      status: "cancelled",
+    };
+    const past = activeBooking("u2", "2026-06-01");
+    // No future-active bookings -> nothing to protect, empty feed fine.
+    expect(feedSafetyError([cancelled, past], 0, 0, TODAY)).toBeNull();
+  });
+});
+
+describe("createCoalescer", () => {
+  it("coalesces concurrent calls into one run", async () => {
+    const coalesce = createCoalescer<number>();
+    let runs = 0;
+    let release: (v: number) => void = () => {};
+    const gate = new Promise<number>((r) => (release = r));
+    const fn = () => {
+      runs++;
+      return gate;
+    };
+
+    const p1 = coalesce(fn);
+    const p2 = coalesce(fn);
+    release(42);
+    expect(await p1).toBe(42);
+    expect(await p2).toBe(42);
+    expect(runs).toBe(1);
+  });
+
+  it("runs again after the previous run settles", async () => {
+    const coalesce = createCoalescer<number>();
+    let runs = 0;
+    const fn = async () => ++runs;
+    expect(await coalesce(fn)).toBe(1);
+    expect(await coalesce(fn)).toBe(2);
+    expect(runs).toBe(2);
+  });
+
+  it("clears the in-flight slot after a rejection", async () => {
+    const coalesce = createCoalescer<number>();
+    await expect(coalesce(() => Promise.reject(new Error("boom")))).rejects.toThrow("boom");
+    expect(await coalesce(async () => 7)).toBe(7);
   });
 });

@@ -85,6 +85,25 @@ systemctl restart cleanturn       # manual restart
 ls -1dt /opt/cleanturn/releases   # release history (newest first)
 ```
 
+### Automatic iCal sync
+
+A systemd timer syncs every property's feed every 10 minutes —
+`cleanturn-sync.timer` fires the oneshot `cleanturn-sync.service`, which curls
+`POST 127.0.0.1:3100/api/cron/sync` with the Bearer token read from
+`shared/cron-auth.header` (regenerated from `CRON_SECRET` by `release.sh` on
+every deploy, which also installs/enables both units). The open `/admin` page
+re-reads the DB every minute, so bookings appear with no interaction.
+
+```sh
+systemctl list-timers cleanturn-sync.timer   # next/last tick
+journalctl -u cleanturn-sync.service -n 20   # tick history (curl output)
+journalctl -u cleanturn | grep '\[sync\]'    # authoritative per-run counts
+```
+
+`GET /api/health` reports `syncFresh: false` when the newest successful sync
+is older than 35 minutes — point any uptime pinger at it to catch a dead
+timer, since in-app alerts can only fire while syncs are running.
+
 **Manual rollback** to the previous release:
 
 ```sh

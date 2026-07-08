@@ -1,0 +1,12 @@
+[Unit]
+Description=Run CleanTurn iCal sync every 10 minutes
+
+[Timer]
+OnCalendar=*:0/10
+# Spread ticks a little so restarts/deploys don't always collide with one.
+RandomizedDelaySec=30
+# Fire a missed tick after downtime/reboot instead of waiting for the next slot.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

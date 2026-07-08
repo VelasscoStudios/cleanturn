@@ -47,6 +47,14 @@ const browser = await chromium.launch({
 - Modals close via CSS class only — the DOM element stays mounted. Wait for table content with scoped selectors (`tbody b:has-text(...)`), never bare `text=` (it substring-matches hidden modal text too).
 - Click buttons with `button:has-text("...")`, not `text=...`.
 
+## Driving the sync loop (bookings/cancellations)
+
+Dev properties point at `/api/dev/ical/<key>` feeds generated from `lib/fixtures.ts` (`demoEvents`); UIDs are `<key>-<index>@cleanturn.demo`. To simulate a new booking, append a `[checkinOffset, checkoutOffset]` pair to a property's plan (new index → new UID → create); removing it again simulates a cancellation. Trigger syncs with `POST /api/cron/sync` + `Authorization: Bearer <CRON_SECRET from .env>`.
+
+Gotcha: `next dev` hot-reloads `fixtures.ts` asynchronously — a sync fired immediately after the edit may still see the old feed. Poll the sync until the expected counts appear instead of asserting on the first call.
+
+Schedule page assertions: jobs render as `.job` divs, status chips as `.chip.<status>` (e.g. `.chip.cancelled`). Use `/admin?days=14` to widen the window. A cancelled UID that reappears in the feed is deliberately NOT resurrected — delete its booking+job rows via prisma before re-testing a create with the same UID.
+
 ## Cleanup
 
-Delete any users/rows you created (via the same API with the admin jar) so the dev DB stays as you found it.
+Delete any users/rows you created (via the same API with the admin jar, or prisma directly) so the dev DB stays as you found it, and restore any fixture edits.

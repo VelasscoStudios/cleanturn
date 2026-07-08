@@ -53,7 +53,7 @@ Real Airbnb iCal feeds are replaced by demo feeds the app serves itself:
 - Seeded `Property.icalUrl` values point at these local routes instead of real airbnb.com URLs.
 - Clicking **Sync now** in `/admin` (or `POST /api/sync-now`) runs the same reconciliation algorithm as production: new bookings create jobs, moved checkouts update job dates (keeping cleaner/status unless already done), disappeared future bookings cancel their booking + job, and same-day-turnover flags get recomputed.
 - Because the seed creates bookings with the exact same iCal UIDs the demo feeds serve, the **first** sync-now after a fresh seed is a no-op — that's intentional, and it's how you can verify idempotency: running sync-now twice in a row always returns `{created: 0, moved: 0, cancelled: 0}` on the second call.
-- `POST /api/cron/sync` still exists for when this becomes a real deployment — it requires `Authorization: Bearer <CRON_SECRET>` (see `.env`) and would be hit by a real scheduler (e.g. GitHub Actions cron) instead of the manual button.
+- `POST /api/cron/sync` is the scheduler entry point — it requires `Authorization: Bearer <CRON_SECRET>` (see `.env`). In production a systemd timer on the droplet (`deploy/cleanturn-sync.timer`, every 10 minutes) hits it, and the open `/admin` page re-reads the DB every minute (`AutoRefresh`), so new bookings and cancellations appear without touching anything. The manual **Sync now** button remains for an immediate refresh; concurrent runs coalesce into one.
 
 ## Running tests
 

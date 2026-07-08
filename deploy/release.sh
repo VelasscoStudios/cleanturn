@@ -23,11 +23,31 @@ ln -sfn "$APP/shared/.env" "$REL/.env"
 # App files are owned by the unprivileged runtime user.
 chown -R "$RUN_USER":"$RUN_USER" "$REL"
 
-# Keep the systemd unit in sync with the repo copy.
-if ! cmp -s "$REL/deploy/cleanturn.service" /etc/systemd/system/cleanturn.service 2>/dev/null; then
-  cp "$REL/deploy/cleanturn.service" /etc/systemd/system/cleanturn.service
+# Keep the systemd units in sync with the repo copies.
+units_changed=0
+for unit in cleanturn.service cleanturn-sync.service cleanturn-sync.timer; do
+  if ! cmp -s "$REL/deploy/$unit" "/etc/systemd/system/$unit" 2>/dev/null; then
+    cp "$REL/deploy/$unit" "/etc/systemd/system/$unit"
+    units_changed=1
+    echo "    systemd unit updated: $unit"
+  fi
+done
+if [ "$units_changed" -eq 1 ]; then
   systemctl daemon-reload
-  echo "    systemd unit updated"
+fi
+
+# The sync timer's curl reads its Authorization header from a file so the
+# secret stays out of argv. Regenerate from shared/.env on every release so a
+# rotated CRON_SECRET propagates; owned by the runtime user (curl runs as it).
+CRON_SECRET_VALUE="$(grep -E '^CRON_SECRET=' "$APP/shared/.env" | head -1 | cut -d= -f2-)"
+if [ -n "$CRON_SECRET_VALUE" ]; then
+  printf 'Authorization: Bearer %s\n' "$CRON_SECRET_VALUE" > "$APP/shared/cron-auth.header.tmp"
+  chown "$RUN_USER":"$RUN_USER" "$APP/shared/cron-auth.header.tmp"
+  chmod 600 "$APP/shared/cron-auth.header.tmp"
+  mv "$APP/shared/cron-auth.header.tmp" "$APP/shared/cron-auth.header"
+  systemctl enable --now cleanturn-sync.timer >/dev/null 2>&1 || true
+else
+  echo "    WARNING: CRON_SECRET missing from shared/.env — sync timer NOT enabled"
 fi
 
 # Migrate + idempotent seed, as the runtime user so the DB file is owned by it.
