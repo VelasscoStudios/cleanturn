@@ -6,7 +6,9 @@ import { createSession, assertFetchHeader } from "@/lib/auth";
 import { registerAttempt, clearAttempts, rateLimitKey, identifierKey } from "@/lib/ratelimit";
 
 const bodySchema = z.object({
-  email: z.string().min(1).max(320),
+  // Lowercased to match how /api/admins stores emails, keeping login
+  // case-insensitive. (Seeded admins are lowercase already.)
+  email: z.string().trim().toLowerCase().pipe(z.string().min(1).max(320)),
   password: z.string().min(1).max(200),
 });
 

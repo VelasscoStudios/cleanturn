@@ -159,6 +159,29 @@ export const updateCleanerSchema = z.object({
 export type UpdateCleanerInput = z.infer<typeof updateCleanerSchema>;
 
 // ---------------------------------------------------------------------------
+// Admin users (staff) CRUD
+// ---------------------------------------------------------------------------
+// Same floor the seed enforces (12+ chars); capped at 200 to match the login
+// schema so no one can set a password they then can't type at login.
+const adminPasswordSchema = z
+  .string()
+  .min(12, "password must be at least 12 characters")
+  .max(200);
+
+export const createAdminUserSchema = z.object({
+  // Stored lowercase; the login route lowercases before lookup, so the pair
+  // stays case-insensitive end to end.
+  email: z.string().trim().toLowerCase().pipe(z.string().email().max(320)),
+  password: adminPasswordSchema,
+});
+export type CreateAdminUserInput = z.infer<typeof createAdminUserSchema>;
+
+export const changeAdminPasswordSchema = z.object({
+  password: adminPasswordSchema,
+});
+export type ChangeAdminPasswordInput = z.infer<typeof changeAdminPasswordSchema>;
+
+// ---------------------------------------------------------------------------
 // GET /api/my/jobs — no body/query to validate today (session-scoped) but
 // kept here in case filters are added later.
 // ---------------------------------------------------------------------------
