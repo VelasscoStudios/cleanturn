@@ -38,20 +38,45 @@ export default async function SchedulePage({
   const cleanerId = typeof params.cleanerId === "string" ? params.cleanerId : "";
   const unassignedOnly = params.unassigned === "true";
   const daysParam = typeof params.days === "string" ? params.days : "7";
+  const statusParam = typeof params.status === "string" ? params.status : "";
+  // Whitelist so an arbitrary query string can't become a filter value.
+  const status = statusParam in STATUS_LABEL ? statusParam : "";
 
   const today = todayStr();
-  const from = today;
-  // "all" = every upcoming job; otherwise a bounded window from today.
-  const windowDays = daysParam === "all" ? null : Math.max(1, parseInt(daysParam, 10) || 7);
-  const to = windowDays === null ? null : addDays(today, windowDays);
+  // Date window: positive days look forward from today, negative days look
+  // back (ending today, so a past view includes today's finished cleans),
+  // "all" = every upcoming, "past" = everything up to today.
+  let from: string | null = today;
+  let to: string | null = null;
+  let isPastView = false;
+  if (daysParam === "all") {
+    // from = today, unbounded end
+  } else if (daysParam === "past") {
+    isPastView = true;
+    from = null;
+    to = today;
+  } else {
+    const n = parseInt(daysParam, 10) || 7;
+    if (n < 0) {
+      isPastView = true;
+      from = addDays(today, n);
+      to = today;
+    } else {
+      to = addDays(today, Math.max(1, n));
+    }
+  }
 
   const [jobs, properties, cleaners, lastSync] = await Promise.all([
     prisma.job.findMany({
       where: {
-        date: to ? { gte: from, lte: to } : { gte: from },
+        date: {
+          ...(from ? { gte: from } : {}),
+          ...(to ? { lte: to } : {}),
+        },
         ...(propertyId ? { propertyId } : {}),
         ...(cleanerId ? { cleanerId } : {}),
         ...(unassignedOnly ? { cleanerId: null } : {}),
+        ...(status ? { status } : {}),
       },
       include: {
         property: {
@@ -66,7 +91,8 @@ export default async function SchedulePage({
         },
         cleaner: { select: { id: true, name: true } },
       },
-      orderBy: [{ date: "asc" }, { createdAt: "asc" }],
+      // Past views read newest-first (most recent clean on top).
+      orderBy: [{ date: isPastView ? "desc" : "asc" }, { createdAt: "asc" }],
     }),
     prisma.property.findMany({
       where: { active: true },
@@ -98,6 +124,7 @@ export default async function SchedulePage({
     groups.set(job.date, list);
   }
   const sortedDates = Array.from(groups.keys()).sort();
+  if (isPastView) sortedDates.reverse();
 
   const lastSyncedLabel = lastSync._max.lastSyncAt
     ? lastSync._max.lastSyncAt.toLocaleString("en-US", {
