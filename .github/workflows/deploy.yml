@@ -61,7 +61,7 @@ jobs:
             -e "ssh -i ~/.ssh/deploy_key $SSH_OPTS" \
             --rsync-path="mkdir -p $REL && rsync" \
             --link-dest=/opt/cleanturn/current \
-            .next public node_modules package.json package-lock.json prisma next.config.ts tsconfig.json deploy \
+            .next public node_modules package.json package-lock.json prisma lib next.config.ts tsconfig.json deploy \
             "$SSH_USER@$HOST:$REL/"
 
       - name: Activate release
