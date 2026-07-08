@@ -16,7 +16,12 @@ const isLocalDev =
 
 const DEV_FALLBACK_SECRET = "dev-only-insecure-secret-please-set-env-1234567890";
 
-const sessionSecret = (() => {
+// Resolved lazily (per request), NOT at module load. `next build` imports every
+// route to collect metadata, and the build environment has no SESSION_SECRET;
+// throwing at import time would break the build. Enforcing at call time still
+// fails closed at runtime — the first request that needs a session throws in a
+// misconfigured production environment.
+function resolveSessionSecret(): string {
   const fromEnv = process.env.SESSION_SECRET;
   if (fromEnv) {
     if (fromEnv.length < 32) {
@@ -28,11 +33,11 @@ const sessionSecret = (() => {
   throw new Error(
     "SESSION_SECRET must be set (NODE_ENV is not development/test — refusing the insecure fallback)",
   );
-})();
+}
 
 function sessionOptions(maxAgeSeconds: number): SessionOptions {
   return {
-    password: sessionSecret,
+    password: resolveSessionSecret(),
     cookieName: SESSION_COOKIE,
     cookieOptions: {
       httpOnly: true,
@@ -49,13 +54,13 @@ function sessionOptions(maxAgeSeconds: number): SessionOptions {
 
 // Default TTL used just for reading; actual TTL is set at creation time via
 // cookieOptions.maxAge, which iron-session bakes into the cookie itself.
-const DEFAULT_OPTIONS = sessionOptions(60 * 60 * 24 * 7);
+const DEFAULT_TTL_SECONDS = 60 * 60 * 24 * 7;
 
 type SessionRecord = Partial<SessionData>;
 
 export async function getSession(): Promise<SessionData | null> {
   const cookieStore = await cookies();
-  const session = await getIronSession<SessionRecord>(cookieStore, DEFAULT_OPTIONS);
+  const session = await getIronSession<SessionRecord>(cookieStore, sessionOptions(DEFAULT_TTL_SECONDS));
   if (!session.role || !session.id) return null;
   return { role: session.role, id: session.id };
 }
@@ -71,7 +76,7 @@ export async function createSession(data: SessionData): Promise<void> {
 
 export async function destroySession(): Promise<void> {
   const cookieStore = await cookies();
-  const session = await getIronSession<SessionRecord>(cookieStore, DEFAULT_OPTIONS);
+  const session = await getIronSession<SessionRecord>(cookieStore, sessionOptions(DEFAULT_TTL_SECONDS));
   session.destroy();
 }
 
