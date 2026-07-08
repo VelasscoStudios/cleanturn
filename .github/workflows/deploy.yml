@@ -1,0 +1,74 @@
+name: Deploy
+
+# Build the app on GitHub's runner (Ubuntu x64 — same platform as the droplet,
+# so the compiled Next.js output and the native Prisma engine run as-is), ship
+# the release, and atomically swap it in on the droplet. No building on the box.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build (heavy lifting happens here, not on the droplet)
+        run: npm run build
+
+      - name: Configure SSH
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          if [ -n "${{ secrets.DEPLOY_KNOWN_HOSTS }}" ]; then
+            printf '%s\n' "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+            echo "SSH_OPTS=-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes" >> "$GITHUB_ENV"
+          else
+            echo "SSH_OPTS=-o StrictHostKeyChecking=accept-new" >> "$GITHUB_ENV"
+          fi
+
+      - name: Ship release
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.DEPLOY_USER }}
+          SHA: ${{ github.sha }}
+        run: |
+          REL="/opt/cleanturn/releases/$SHA"
+          # --link-dest hardlinks unchanged files against the live release, so
+          # only the changed files transfer after the first deploy.
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/deploy_key $SSH_OPTS" \
+            --rsync-path="mkdir -p $REL && rsync" \
+            --link-dest=/opt/cleanturn/current \
+            .next public node_modules package.json package-lock.json prisma next.config.ts tsconfig.json deploy \
+            "$SSH_USER@$HOST:$REL/"
+
+      - name: Activate release
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.DEPLOY_USER }}
+          SHA: ${{ github.sha }}
+        run: |
+          ssh -i ~/.ssh/deploy_key $SSH_OPTS "$SSH_USER@$HOST" \
+            "REL=/opt/cleanturn/releases/$SHA bash /opt/cleanturn/releases/$SHA/deploy/release.sh"

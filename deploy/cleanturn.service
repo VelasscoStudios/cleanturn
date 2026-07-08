@@ -1,0 +1,25 @@
+[Unit]
+Description=CleanTurn (Next.js) production server
+After=network.target
+
+[Service]
+Type=simple
+User=cleanturn
+Group=cleanturn
+# current -> releases/<sha>; systemd resolves the symlink at (re)start, so a
+# deploy that repoints it and restarts picks up the new release.
+WorkingDirectory=/opt/cleanturn/current
+EnvironmentFile=/opt/cleanturn/shared/.env
+ExecStart=/opt/cleanturn/current/node_modules/.bin/next start -p 3100 -H 127.0.0.1
+Restart=on-failure
+RestartSec=3
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/cleanturn/shared/data
+
+[Install]
+WantedBy=multi-user.target
