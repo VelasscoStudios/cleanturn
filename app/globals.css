@@ -242,6 +242,99 @@ body {
   border-color: var(--red);
   color: var(--red);
 }
+
+/* ── Dense schedule table (one row per clean, click to expand) ───────── */
+.day-count {
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--muted);
+  margin-left: 10px;
+  font-size: 12px;
+}
+.sched-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+}
+table.sched {
+  width: 100%;
+  border-collapse: collapse;
+}
+.sched .srow {
+  border-top: 1px solid var(--line);
+  cursor: pointer;
+}
+.sched tbody .srow:first-child,
+.sched .srow:first-child {
+  border-top: none;
+}
+.sched .srow:hover {
+  background: rgba(15, 118, 110, 0.04);
+}
+.sched td {
+  padding: 7px 10px;
+  font-size: 13px;
+  vertical-align: middle;
+}
+.sched .c-caret {
+  width: 22px;
+  padding-left: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+.sched .c-time {
+  width: 54px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sched .c-prop .nick {
+  font-weight: 600;
+  font-size: 14px;
+}
+.sched .c-cost {
+  width: 66px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.sched .c-assign {
+  width: 152px;
+}
+.sched .c-assign select {
+  min-width: 132px;
+  padding: 5px 6px;
+  font-size: 12px;
+}
+.sched .c-status {
+  width: 122px;
+  text-align: right;
+}
+/* Red left-accent on the caret cell for unassigned rows. */
+.sched .srow.unassigned .c-caret {
+  border-left: 3px solid var(--red);
+  padding-left: 5px;
+}
+.flag.mini {
+  font-size: 10px;
+  padding: 1px 5px;
+  margin-left: 6px;
+}
+.sched .srow-detail td {
+  background: rgba(15, 118, 110, 0.03);
+  padding-top: 2px;
+  padding-bottom: 9px;
+}
+.sched .detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  font-size: 12px;
+  color: var(--muted);
+}
 .toast {
   position: fixed;
   bottom: 20px;

@@ -3,28 +3,9 @@ import { prisma } from "@/lib/db";
 import { requireRolePage } from "@/lib/auth";
 import { todayStr, addDays, fmtDay } from "@/lib/dates";
 import ScheduleFilters from "./_components/ScheduleFilters";
-import AssignSelect from "./_components/AssignSelect";
 import SyncNowButton from "./_components/SyncNowButton";
 import AutoRefresh from "./_components/AutoRefresh";
-import { formatCents } from "./_components/format";
-
-const STATUS_LABEL: Record<string, string> = {
-  unassigned: "Unassigned",
-  assigned: "Assigned",
-  in_progress: "In progress",
-  awaiting_confirm: "Left · awaiting confirm",
-  done: "Done ✅",
-  cancelled: "Cancelled",
-};
-
-const STATUS_CHIP_CLASS: Record<string, string> = {
-  unassigned: "unassigned",
-  assigned: "assigned",
-  in_progress: "in_progress",
-  awaiting_confirm: "awaiting",
-  done: "done",
-  cancelled: "cancelled",
-};
+import JobRow from "./_components/JobRow";
 
 export default async function SchedulePage({
   searchParams,
@@ -40,7 +21,15 @@ export default async function SchedulePage({
   const daysParam = typeof params.days === "string" ? params.days : "7";
   const statusParam = typeof params.status === "string" ? params.status : "";
   // Whitelist so an arbitrary query string can't become a filter value.
-  const status = statusParam in STATUS_LABEL ? statusParam : "";
+  const VALID_STATUSES = [
+    "unassigned",
+    "assigned",
+    "in_progress",
+    "awaiting_confirm",
+    "done",
+    "cancelled",
+  ];
+  const status = VALID_STATUSES.includes(statusParam) ? statusParam : "";
 
   const today = todayStr();
   // Date window: positive days look forward from today, negative days look
@@ -87,6 +76,7 @@ export default async function SchedulePage({
             arriveTime: true,
             outByTime: true,
             accessCode: true,
+            directions: true,
           },
         },
         cleaner: { select: { id: true, name: true } },
@@ -160,49 +150,47 @@ export default async function SchedulePage({
       ) : (
         sortedDates.map((date) => {
           const isToday = date === today;
+          const list = groups.get(date) ?? [];
+          const unassignedInDay = list.filter(
+            (j) => !j.cleanerId && j.status !== "cancelled"
+          ).length;
           return (
             <div className="day-group" key={date}>
               <div className="day-head">
                 {fmtDay(date)}
                 {isToday && <span className="today-tag">TODAY</span>}
+                <span className="day-count">
+                  {list.length} clean{list.length === 1 ? "" : "s"}
+                  {unassignedInDay > 0 ? ` · ${unassignedInDay} unassigned` : ""}
+                </span>
               </div>
-              {(groups.get(date) ?? []).map((job) => {
-                return (
-                  <div
-                    className={`job ${!job.cleanerId ? "unassigned" : ""}`}
-                    key={job.id}
-                  >
-                    <div>
-                      <div className="prop">
-                        {job.property.nickname}{" "}
-                        {job.sameDayTurnover && (
-                          <span className="flag">
-                            ⚡ SAME-DAY
-                            {job.nextCheckinNote ? ` · ${job.nextCheckinNote}` : ""}
-                          </span>
-                        )}
-                      </div>
-                      <div className="addr">{job.property.address}</div>
-                      <div className="meta">
-                        <span>
-                          ⏰ {job.property.arriveTime} → out by {job.property.outByTime}
-                        </span>
-                        <span>💵 {formatCents(job.costCents)}</span>
-                        <span>🔑 {job.property.accessCode || "—"}</span>
-                      </div>
-                    </div>
-                    <AssignSelect
-                      jobId={job.id}
-                      cleanerId={job.cleanerId}
-                      cleanerName={job.cleaner?.name}
-                      cleaners={cleaners}
-                    />
-                    <span className={`chip ${STATUS_CHIP_CLASS[job.status] ?? job.status}`}>
-                      {STATUS_LABEL[job.status] ?? job.status}
-                    </span>
-                  </div>
-                );
-              })}
+              <div className="sched-wrap">
+                <table className="sched">
+                  <tbody>
+                    {list.map((job) => (
+                      <JobRow
+                        key={job.id}
+                        cleaners={cleaners}
+                        job={{
+                          id: job.id,
+                          arriveTime: job.property.arriveTime,
+                          outByTime: job.property.outByTime,
+                          nickname: job.property.nickname,
+                          address: job.property.address,
+                          accessCode: job.property.accessCode,
+                          directions: job.property.directions,
+                          costCents: job.costCents,
+                          status: job.status,
+                          cleanerId: job.cleanerId,
+                          cleanerName: job.cleaner?.name ?? null,
+                          sameDayTurnover: job.sameDayTurnover,
+                          nextCheckinNote: job.nextCheckinNote,
+                        }}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           );
         })
