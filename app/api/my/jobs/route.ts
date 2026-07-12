@@ -15,7 +15,7 @@ export async function GET() {
 
   try {
     // Own jobs only: today + future, plus yesterday (further filtered to
-    // "not done" below via isVisibleOnMyJobs).
+    // "not completed" below via isVisibleOnMyJobs).
     const jobs = await prisma.job.findMany({
       where: {
         cleanerId: session.id,

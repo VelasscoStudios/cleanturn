@@ -234,7 +234,7 @@ async function applyCreates(
           propertyId,
           date: c.checkoutDate,
           costCents: cleanCostCents,
-          status: "unassigned",
+          status: "assigned",
         },
       });
       return true;
@@ -251,7 +251,7 @@ async function applyMoves(
     jobId: string;
     newCheckinDate: string;
     newCheckoutDate: string;
-    resetDoneJob: boolean;
+    resetCompletedJob: boolean;
   }[]
 ): Promise<number> {
   let count = 0;
@@ -268,7 +268,7 @@ async function applyMoves(
       }),
       prisma.job.update({
         where: { id: m.jobId },
-        data: m.resetDoneJob
+        data: m.resetCompletedJob
           ? {
               date: m.newCheckoutDate,
               status: "assigned",
@@ -319,7 +319,9 @@ async function applyCancels(
   return count;
 }
 
-async function recomputeSameDayForProperty(propertyId: string, today: string): Promise<void> {
+// Exported for reuse by the manual-clean create route: a manually added job
+// must get the same-day-turnover flag if a booking checks in on its date.
+export async function recomputeSameDayForProperty(propertyId: string, today: string): Promise<void> {
   const activeBookings = await prisma.booking.findMany({
     where: { propertyId, status: "active" },
     select: { propertyId: true, checkinDate: true, status: true },
@@ -413,7 +415,8 @@ async function maybeNotifyUnassignedDigest(today: string): Promise<void> {
 
   const unassignedCount = await prisma.job.count({
     where: {
-      status: "unassigned",
+      cleanerId: null,
+      status: { notIn: ["completed", "cancelled"] },
       date: { gte: today, lte: cutoff },
     },
   });

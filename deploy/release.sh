@@ -2,8 +2,9 @@
 #
 # Activate a shipped release. Invoked over SSH by the deploy workflow with REL
 # set to /opt/cleanturn/releases/<sha>. Runs as the SSH deploy user (root):
-# migrates the DB, atomically swaps the `current` symlink, restarts the
-# service, health-checks it, and rolls back if the new release is unhealthy.
+# snapshots and migrates the DB, atomically swaps the `current` symlink,
+# restarts the service, health-checks it, and rolls back if the new release is
+# unhealthy.
 #
 set -euo pipefail
 
@@ -48,6 +49,37 @@ if [ -n "$CRON_SECRET_VALUE" ]; then
   systemctl enable --now cleanturn-sync.timer >/dev/null 2>&1 || true
 else
   echo "    WARNING: CRON_SECRET missing from shared/.env — sync timer NOT enabled"
+fi
+
+# Pause the sync timer while we migrate and swap, so a tick can't land while
+# the old code is still serving against the newly migrated schema. The EXIT
+# trap restarts it however this script ends (success, migrate failure, or
+# rollback).
+if systemctl is-active --quiet cleanturn-sync.timer; then
+  systemctl stop cleanturn-sync.timer
+  trap 'systemctl start cleanturn-sync.timer' EXIT
+fi
+
+# Snapshot the DB before migrating: data backfills are one-way, and the
+# health-check rollback below restores code, not data. sqlite3's .backup is
+# consistent even mid-write; the cp fallback is safe enough with the sync
+# timer paused and the app's organic write rate near zero.
+DB="$APP/shared/data/prod.db"
+if [ -f "$DB" ]; then
+  BACKUPS="$APP/shared/backups"
+  mkdir -p "$BACKUPS"
+  SNAP="$BACKUPS/prod-$(date +%Y%m%d-%H%M%S)-$(basename "$REL" | cut -c1-12).db"
+  if command -v sqlite3 >/dev/null 2>&1; then
+    sqlite3 "$DB" ".backup '$SNAP'"
+  else
+    cp "$DB" "$SNAP"
+    if [ -f "${DB}-wal" ]; then cp "${DB}-wal" "${SNAP}-wal"; fi
+  fi
+  echo "    DB snapshot: $SNAP"
+  # Same retention as releases.
+  ls -1t "$BACKUPS"/prod-*.db 2>/dev/null | tail -n +$((KEEP + 1)) | while read -r old; do
+    rm -f "$old" "${old}-wal"
+  done
 fi
 
 # Migrate + idempotent seed, as the runtime user so the DB file is owned by it.

@@ -78,11 +78,9 @@ export default function ScheduleFilters({
         onChange={(e) => updateParam("status", e.target.value || null)}
       >
         <option value="">All statuses</option>
-        <option value="unassigned">Unassigned</option>
         <option value="assigned">Assigned</option>
         <option value="in_progress">In progress</option>
-        <option value="awaiting_confirm">Awaiting confirm</option>
-        <option value="done">Done</option>
+        <option value="completed">Completed</option>
         <option value="cancelled">Cancelled</option>
       </select>
       <label>

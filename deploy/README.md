@@ -115,5 +115,18 @@ systemctl restart cleanturn
 
 - **TLS**: point a domain at the droplet and run `certbot --nginx` for HTTPS,
   then set `APP_URL=https://your-domain` in `shared/.env`.
-- **Backups**: the whole DB is one file — `cp /opt/cleanturn/shared/data/prod.db`
-  on a schedule (SQLite `.backup` for a consistent copy under load).
+- **Backups**: every deploy snapshots the DB to `shared/backups/` before
+  migrating (last 5 kept). To restore one after a bad deploy:
+
+  ```sh
+  systemctl stop cleanturn cleanturn-sync.timer
+  cp /opt/cleanturn/shared/backups/<snapshot>.db /opt/cleanturn/shared/data/prod.db
+  rm -f /opt/cleanturn/shared/data/prod.db-wal /opt/cleanturn/shared/data/prod.db-shm
+  systemctl start cleanturn cleanturn-sync.timer
+  ```
+
+  Deploy-time snapshots don't cover data loss between deploys — for that,
+  also copy `shared/data/prod.db` off-box on a schedule (SQLite `.backup`
+  for a consistent copy under load). Installing `sqlite3` on the droplet
+  (`apt-get install -y sqlite3`) upgrades the deploy snapshot from a file
+  copy to a `.backup`-consistent one.

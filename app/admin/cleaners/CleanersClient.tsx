@@ -9,9 +9,15 @@ type FormState = {
   name: string;
   phone: string;
   email: string;
+  language: "en" | "uk";
 };
 
-const emptyForm: FormState = { name: "", phone: "", email: "" };
+const emptyForm: FormState = { name: "", phone: "", email: "", language: "en" };
+
+const LANGUAGE_LABEL: Record<string, string> = {
+  en: "English",
+  uk: "Ukrainian",
+};
 
 type CleanerApiResult = { cleaner: CleanerRow; pin?: string };
 
@@ -38,7 +44,12 @@ export default function CleanersClient({ cleaners }: { cleaners: CleanerRow[] })
   function openEdit(c: CleanerRow) {
     setEditingId(c.id);
     setEditingActive(c.active);
-    setForm({ name: c.name, phone: c.phone, email: c.email ?? "" });
+    setForm({
+      name: c.name,
+      phone: c.phone,
+      email: c.email ?? "",
+      language: c.language === "uk" ? "uk" : "en",
+    });
     setError(null);
     setRevealedPin(null);
     setModalOpen(true);
@@ -69,6 +80,7 @@ export default function CleanersClient({ cleaners }: { cleaners: CleanerRow[] })
       name: form.name.trim(),
       phone: form.phone.trim(),
       email: form.email.trim() || null,
+      language: form.language,
     };
 
     setSaving(true);
@@ -151,6 +163,7 @@ export default function CleanersClient({ cleaners }: { cleaners: CleanerRow[] })
             <th>Name</th>
             <th>Phone</th>
             <th>Login</th>
+            <th>Language</th>
             <th>Status</th>
           </tr>
         </thead>
@@ -162,6 +175,7 @@ export default function CleanersClient({ cleaners }: { cleaners: CleanerRow[] })
               </td>
               <td>{c.phone}</td>
               <td>Phone + PIN</td>
+              <td>{LANGUAGE_LABEL[c.language] ?? c.language}</td>
               <td>
                 {c.active ? (
                   <span className="ok">Active</span>
@@ -211,6 +225,16 @@ export default function CleanersClient({ cleaners }: { cleaners: CleanerRow[] })
                 placeholder="maria@mail.com"
               />
             </div>
+          </div>
+          <div className="fgroup">
+            <label>Default language</label>
+            <select
+              value={form.language}
+              onChange={(e) => set("language", e.target.value === "uk" ? "uk" : "en")}
+            >
+              <option value="en">English</option>
+              <option value="uk">Ukrainian (Українська)</option>
+            </select>
           </div>
 
           {revealedPin && (

@@ -33,11 +33,9 @@ export const timeStrSchema = z
   .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "must be an HH:MM time string");
 
 export const jobStatusSchema = z.enum([
-  "unassigned",
   "assigned",
   "in_progress",
-  "awaiting_confirm",
-  "done",
+  "completed",
   "cancelled",
 ]);
 
@@ -142,10 +140,14 @@ export type UpdateOwnerInput = z.infer<typeof updateOwnerSchema>;
 // ---------------------------------------------------------------------------
 // Cleaners CRUD
 // ---------------------------------------------------------------------------
+export const cleanerLanguageSchema = z.enum(["en", "uk"]);
+export type CleanerLanguage = z.infer<typeof cleanerLanguageSchema>;
+
 export const createCleanerSchema = z.object({
   name: z.string().min(1).max(200),
   phone: z.string().min(1).max(40),
   email: z.string().email().max(320).optional().nullable(),
+  language: cleanerLanguageSchema.optional().default("en"),
 });
 export type CreateCleanerInput = z.infer<typeof createCleanerSchema>;
 
@@ -153,10 +155,19 @@ export const updateCleanerSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   phone: z.string().min(1).max(40).optional(),
   email: z.string().email().max(320).optional().nullable(),
+  language: cleanerLanguageSchema.optional(),
   active: z.boolean().optional(),
   resetPin: z.boolean().optional(),
 });
 export type UpdateCleanerInput = z.infer<typeof updateCleanerSchema>;
+
+// ---------------------------------------------------------------------------
+// PATCH /api/my/language — cleaner updates their own UI language
+// ---------------------------------------------------------------------------
+export const updateMyLanguageSchema = z.object({
+  language: cleanerLanguageSchema,
+});
+export type UpdateMyLanguageInput = z.infer<typeof updateMyLanguageSchema>;
 
 // ---------------------------------------------------------------------------
 // Admin users (staff) CRUD
@@ -180,6 +191,18 @@ export const changeAdminPasswordSchema = z.object({
   password: adminPasswordSchema,
 });
 export type ChangeAdminPasswordInput = z.infer<typeof changeAdminPasswordSchema>;
+
+// ---------------------------------------------------------------------------
+// POST /api/jobs — manual clean, not backed by an iCal booking
+// ---------------------------------------------------------------------------
+export const createManualJobSchema = z.object({
+  propertyId: z.string().min(1).max(64),
+  date: dateStrSchema,
+  // Omitted → snapshot the property's cleanCostCents, same as synced jobs.
+  costCents: z.number().int().nonnegative().max(100_000_000).optional(),
+  cleanerId: z.string().min(1).max(64).optional().nullable(),
+});
+export type CreateManualJobInput = z.infer<typeof createManualJobSchema>;
 
 // ---------------------------------------------------------------------------
 // GET /api/my/jobs — no body/query to validate today (session-scoped) but

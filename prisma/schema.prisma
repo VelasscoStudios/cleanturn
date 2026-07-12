@@ -54,6 +54,7 @@ model Cleaner {
   phone     String   @unique
   email     String?
   pinHash   String
+  language  String   @default("en") // en | uk — UI language for the cleaner view
   active    Boolean  @default(true)
   jobs      Job[]
   createdAt DateTime @default(now())
@@ -76,15 +77,19 @@ model Booking {
 
 model Job {
   id              String    @id @default(cuid())
-  bookingId       String    @unique
-  booking         Booking   @relation(fields: [bookingId], references: [id])
+  // Null for manual cleans added by the admin — those exist outside the iCal
+  // feed, so sync's reconcile (which diffs bookings) never touches them.
+  bookingId       String?   @unique
+  booking         Booking?  @relation(fields: [bookingId], references: [id])
   propertyId      String
   property        Property  @relation(fields: [propertyId], references: [id])
-  date            String // YYYY-MM-DD, always = booking.checkoutDate
+  date            String // YYYY-MM-DD; = booking.checkoutDate for synced jobs, admin-chosen for manual
   costCents       Int // snapshot of property.cleanCostCents at creation
   cleanerId       String?
   cleaner         Cleaner?  @relation(fields: [cleanerId], references: [id])
-  status          String    @default("unassigned") // unassigned|assigned|in_progress|awaiting_confirm|done|cancelled
+  // "cancelled" is only ever set by an admin or by the iCal sync (booking
+  // gone from the feed) — never by a cleaner. Unassigned = cleanerId null.
+  status          String    @default("assigned") // assigned|in_progress|completed|cancelled
   sameDayTurnover Boolean   @default(false)
   nextCheckinNote String?
   arrivedAt       DateTime?

@@ -13,7 +13,7 @@ export type ExistingBooking = {
   status: "active" | "cancelled";
   job: {
     id: string;
-    status: string; // unassigned|assigned|in_progress|awaiting_confirm|done|cancelled
+    status: string; // assigned|in_progress|completed|cancelled
     cleanerId: string | null;
   } | null;
 };
@@ -29,8 +29,8 @@ export type ReconcileMove = {
   jobId: string;
   newCheckinDate: string;
   newCheckoutDate: string;
-  /** true when this move takes a done job's date into the future — job should reset to assigned + clear timestamps */
-  resetDoneJob: boolean;
+  /** true when this move takes a completed job's date into the future — job should reset to assigned + clear timestamps */
+  resetCompletedJob: boolean;
 };
 
 export type ReconcileCancel = {
@@ -52,8 +52,8 @@ export type ReconcileResult = {
  *
  *  - New UID                          -> create
  *  - Existing UID, checkin/checkout changed -> move (keep cleaner & status
- *    unless the job is done; a done job whose checkout moves to a future
- *    date gets reset to assigned with cleared timestamps by the caller)
+ *    unless the job is completed; a completed job whose checkout moves to a
+ *    future date gets reset to assigned with cleared timestamps by the caller)
  *  - UID disappeared from the feed, booking still active, checkout >= today
  *    -> cancel
  *  - Never touch a booking that is fully in the past (checkout < today),
@@ -109,16 +109,16 @@ export function reconcile(
       continue;
     }
 
-    const wasDone = existing.job.status === "done";
+    const wasCompleted = existing.job.status === "completed";
     const movesToFuture = event.checkout >= todayStr;
-    const resetDoneJob = wasDone && movesToFuture;
+    const resetCompletedJob = wasCompleted && movesToFuture;
 
     moves.push({
       bookingId: existing.id,
       jobId: existing.job.id,
       newCheckinDate: event.checkin,
       newCheckoutDate: event.checkout,
-      resetDoneJob,
+      resetCompletedJob,
     });
   }
 

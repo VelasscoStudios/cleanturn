@@ -6,6 +6,7 @@ import ScheduleFilters from "./_components/ScheduleFilters";
 import SyncNowButton from "./_components/SyncNowButton";
 import AutoRefresh from "./_components/AutoRefresh";
 import JobRow from "./_components/JobRow";
+import AddCleanButton from "./_components/AddCleanButton";
 
 export default async function SchedulePage({
   searchParams,
@@ -21,14 +22,7 @@ export default async function SchedulePage({
   const daysParam = typeof params.days === "string" ? params.days : "7";
   const statusParam = typeof params.status === "string" ? params.status : "";
   // Whitelist so an arbitrary query string can't become a filter value.
-  const VALID_STATUSES = [
-    "unassigned",
-    "assigned",
-    "in_progress",
-    "awaiting_confirm",
-    "done",
-    "cancelled",
-  ];
+  const VALID_STATUSES = ["assigned", "in_progress", "completed", "cancelled"];
   const status = VALID_STATUSES.includes(statusParam) ? statusParam : "";
 
   const today = todayStr();
@@ -86,7 +80,7 @@ export default async function SchedulePage({
     }),
     prisma.property.findMany({
       where: { active: true },
-      select: { id: true, nickname: true },
+      select: { id: true, nickname: true, cleanCostCents: true },
       orderBy: { nickname: "asc" },
     }),
     prisma.cleaner.findMany({
@@ -138,6 +132,15 @@ export default async function SchedulePage({
         <div className="alert ok">✅ All cleans in the next 48h are assigned</div>
       )}
 
+      <AddCleanButton
+        properties={properties.map((p) => ({
+          id: p.id,
+          name: p.nickname,
+          cleanCostCents: p.cleanCostCents,
+        }))}
+        cleaners={cleaners}
+      />
+
       <Suspense fallback={<div className="filters" />}>
         <ScheduleFilters
           properties={properties.map((p) => ({ id: p.id, name: p.nickname }))}
@@ -185,6 +188,7 @@ export default async function SchedulePage({
                           cleanerName: job.cleaner?.name ?? null,
                           sameDayTurnover: job.sameDayTurnover,
                           nextCheckinNote: job.nextCheckinNote,
+                          manual: job.bookingId === null,
                         }}
                       />
                     ))}

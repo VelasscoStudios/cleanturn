@@ -17,6 +17,12 @@ describe("isJobStatus", () => {
     expect(isJobStatus("bogus")).toBe(false);
     expect(isJobStatus("")).toBe(false);
   });
+
+  it("rejects retired legacy statuses", () => {
+    expect(isJobStatus("unassigned")).toBe(false);
+    expect(isJobStatus("awaiting_confirm")).toBe(false);
+    expect(isJobStatus("done")).toBe(false);
+  });
 });
 
 describe("cleanerTransition — legal forward transitions", () => {
@@ -26,29 +32,17 @@ describe("cleanerTransition — legal forward transitions", () => {
     expect(result).toEqual({ ok: true, nextStatus: "in_progress", stamp: "arrivedAt" });
   });
 
-  it("in_progress -> awaiting_confirm stamps leftAt", () => {
+  it("in_progress -> completed stamps cleanedAt", () => {
     const job = { id: "j1", status: "in_progress", cleanerId: "c1" };
-    const result = cleanerTransition(job, "c1", "awaiting_confirm");
-    expect(result).toEqual({ ok: true, nextStatus: "awaiting_confirm", stamp: "leftAt" });
-  });
-
-  it("awaiting_confirm -> done stamps cleanedAt", () => {
-    const job = { id: "j1", status: "awaiting_confirm", cleanerId: "c1" };
-    const result = cleanerTransition(job, "c1", "done");
-    expect(result).toEqual({ ok: true, nextStatus: "done", stamp: "cleanedAt" });
+    const result = cleanerTransition(job, "c1", "completed");
+    expect(result).toEqual({ ok: true, nextStatus: "completed", stamp: "cleanedAt" });
   });
 });
 
 describe("cleanerTransition — illegal transitions", () => {
-  it("rejects skipping a step (assigned -> awaiting_confirm)", () => {
+  it("rejects skipping straight to completed", () => {
     const job = { id: "j1", status: "assigned", cleanerId: "c1" };
-    const result = cleanerTransition(job, "c1", "awaiting_confirm");
-    expect(result.ok).toBe(false);
-  });
-
-  it("rejects skipping straight to done", () => {
-    const job = { id: "j1", status: "assigned", cleanerId: "c1" };
-    const result = cleanerTransition(job, "c1", "done");
+    const result = cleanerTransition(job, "c1", "completed");
     expect(result.ok).toBe(false);
   });
 
@@ -58,14 +52,8 @@ describe("cleanerTransition — illegal transitions", () => {
     expect(result.ok).toBe(false);
   });
 
-  it("rejects moving from done anywhere", () => {
-    const job = { id: "j1", status: "done", cleanerId: "c1" };
-    const result = cleanerTransition(job, "c1", "in_progress");
-    expect(result.ok).toBe(false);
-  });
-
-  it("rejects moving from unassigned (cleaner cannot self-assign via status)", () => {
-    const job = { id: "j1", status: "unassigned", cleanerId: null };
+  it("rejects moving from completed anywhere", () => {
+    const job = { id: "j1", status: "completed", cleanerId: "c1" };
     const result = cleanerTransition(job, "c1", "in_progress");
     expect(result.ok).toBe(false);
   });
@@ -76,9 +64,17 @@ describe("cleanerTransition — illegal transitions", () => {
     expect(result.ok).toBe(false);
   });
 
-  it("rejects transitioning to cancelled via cleaner path", () => {
-    const job = { id: "j1", status: "assigned", cleanerId: "c1" };
-    const result = cleanerTransition(job, "c1", "cancelled");
+  it("rejects cancelling via the cleaner path from every status", () => {
+    for (const status of JOB_STATUSES) {
+      const job = { id: "j1", status, cleanerId: "c1" };
+      const result = cleanerTransition(job, "c1", "cancelled");
+      expect(result.ok).toBe(false);
+    }
+  });
+
+  it("rejects a cleaner reactivating a cancelled job", () => {
+    const job = { id: "j1", status: "cancelled", cleanerId: "c1" };
+    const result = cleanerTransition(job, "c1", "in_progress");
     expect(result.ok).toBe(false);
   });
 });
@@ -93,8 +89,8 @@ describe("cleanerTransition — cross-cleaner denial", () => {
     }
   });
 
-  it("rejects when job is unassigned (cleanerId null) regardless of requester", () => {
-    const job = { id: "j1", status: "unassigned", cleanerId: null };
+  it("rejects when job has no cleaner (unassigned) regardless of requester", () => {
+    const job = { id: "j1", status: "assigned", cleanerId: null };
     const result = cleanerTransition(job, "cleaner-B", "in_progress");
     expect(result.ok).toBe(false);
   });
@@ -113,14 +109,14 @@ describe("adminTransition — admin may set any status", () => {
     expect(result).toEqual({ ok: true, nextStatus: "in_progress", stamp: "arrivedAt" });
   });
 
-  it("allows arbitrary jump (assigned -> done) without stamping bonus timestamps", () => {
+  it("allows arbitrary jump (assigned -> completed) without stamping bonus timestamps", () => {
     const job = { id: "j1", status: "assigned", cleanerId: "c1" };
-    const result = adminTransition(job, "done");
-    expect(result).toEqual({ ok: true, nextStatus: "done", stamp: null });
+    const result = adminTransition(job, "completed");
+    expect(result).toEqual({ ok: true, nextStatus: "completed", stamp: null });
   });
 
-  it("allows moving backwards (done -> assigned) as a correction", () => {
-    const job = { id: "j1", status: "done", cleanerId: "c1" };
+  it("allows moving backwards (completed -> assigned) as a correction", () => {
+    const job = { id: "j1", status: "completed", cleanerId: "c1" };
     const result = adminTransition(job, "assigned");
     expect(result).toEqual({ ok: true, nextStatus: "assigned", stamp: null });
   });
@@ -131,15 +127,16 @@ describe("adminTransition — admin may set any status", () => {
     expect(result).toEqual({ ok: true, nextStatus: "cancelled", stamp: null });
   });
 
-  it("allows admin to assign unassigned -> assigned with no stamp", () => {
-    const job = { id: "j1", status: "unassigned", cleanerId: null };
-    const result = adminTransition(job, "assigned");
-    expect(result).toEqual({ ok: true, nextStatus: "assigned", stamp: null });
-  });
-
   it("still rejects an invalid target status", () => {
     const job = { id: "j1", status: "assigned", cleanerId: "c1" };
     const result = adminTransition(job, "bogus");
     expect(result.ok).toBe(false);
+  });
+
+  it("rejects retired legacy statuses as targets", () => {
+    const job = { id: "j1", status: "assigned", cleanerId: "c1" };
+    expect(adminTransition(job, "done").ok).toBe(false);
+    expect(adminTransition(job, "awaiting_confirm").ok).toBe(false);
+    expect(adminTransition(job, "unassigned").ok).toBe(false);
   });
 });

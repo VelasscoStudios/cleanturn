@@ -186,7 +186,7 @@ async function main() {
       let paidAt: Date | null = null;
 
       if (isPast) {
-        status = "done";
+        status = "completed";
         const cleaner = nextCleaner();
         cleanerId = cleaner.id;
         arrivedAt = isoAt(event.checkout, 11, 0);
@@ -198,7 +198,8 @@ async function main() {
       } else if (isToday) {
         const mix = jobCounter % 3;
         if (mix === 0) {
-          status = "unassigned";
+          // unassigned = assigned status with no cleaner
+          status = "assigned";
         } else if (mix === 1) {
           status = "in_progress";
           const cleaner = nextCleaner();
@@ -211,11 +212,9 @@ async function main() {
         }
       } else {
         // future
+        status = "assigned";
         const mix = jobCounter % 2;
-        if (mix === 0) {
-          status = "unassigned";
-        } else {
-          status = "assigned";
+        if (mix !== 0) {
           const cleaner = nextCleaner();
           cleanerId = cleaner.id;
         }
@@ -248,14 +247,14 @@ async function main() {
   // Ensure at least one unassigned job exists today across the whole
   // portfolio (per brief: "at least one unassigned" among today's jobs).
   const unassignedToday = await prisma.job.count({
-    where: { date: today, status: "unassigned" },
+    where: { date: today, cleanerId: null, status: "assigned" },
   });
   if (unassignedToday === 0) {
     const anyTodayJob = await prisma.job.findFirst({ where: { date: today } });
     if (anyTodayJob) {
       await prisma.job.update({
         where: { id: anyTodayJob.id },
-        data: { status: "unassigned", cleanerId: null, arrivedAt: null },
+        data: { status: "assigned", cleanerId: null, arrivedAt: null },
       });
     }
   }

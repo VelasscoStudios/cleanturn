@@ -2,11 +2,12 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { apiFetch } from "@/lib/client";
+import { STRINGS, type Lang, type Strings } from "./translations";
 
 type MyJob = {
   id: string;
   date: string;
-  status: "unassigned" | "assigned" | "in_progress" | "awaiting_confirm" | "done" | "cancelled";
+  status: "assigned" | "in_progress" | "completed" | "cancelled";
   costCents: number;
   sameDayTurnover: boolean;
   nextCheckinNote: string | null;
@@ -27,10 +28,10 @@ function formatCents(cents: number): string {
   return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
 }
 
-function fmtDayLocal(d: string): string {
+function fmtDayLocal(d: string, locale: string): string {
   const [y, m, day] = d.split("-").map(Number);
   const dt = new Date(Date.UTC(y, m - 1, day, 12, 0, 0));
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat(locale, {
     timeZone: "UTC",
     weekday: "long",
     month: "short",
@@ -56,26 +57,65 @@ function todayStrLocal(): string {
 
 const NEXT_ACTION: Partial<Record<MyJob["status"], MyJob["status"]>> = {
   assigned: "in_progress",
-  in_progress: "awaiting_confirm",
-  awaiting_confirm: "done",
+  in_progress: "completed",
 };
 
-const ACTION_LABEL: Record<string, string> = {
-  assigned: "🚗 I've arrived",
-  in_progress: "🚪 I've left",
-  awaiting_confirm: "✨ Unit is clean",
+const ACTION_LABEL_KEY: Record<string, keyof Strings> = {
+  assigned: "actionArrived",
+  in_progress: "actionClean",
 };
 
 const ACTION_CLASS: Record<string, string> = {
   assigned: "arrive",
-  in_progress: "leave",
-  awaiting_confirm: "clean",
+  in_progress: "clean",
 };
 
-export function MyJobsView({ cleanerName }: { cleanerName: string }) {
+function LangToggle({
+  lang,
+  onChange,
+}: {
+  lang: Lang;
+  onChange: (lang: Lang) => void;
+}) {
+  const btn = (value: Lang, label: string) => (
+    <button
+      type="button"
+      onClick={() => onChange(value)}
+      aria-pressed={lang === value}
+      style={{
+        border: "1px solid rgba(255,255,255,0.5)",
+        background: lang === value ? "rgba(255,255,255,0.9)" : "transparent",
+        color: lang === value ? "#333" : "inherit",
+        borderRadius: 6,
+        fontSize: 11,
+        fontWeight: 700,
+        padding: "2px 7px",
+        cursor: "pointer",
+      }}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div style={{ display: "flex", gap: 4 }}>
+      {btn("en", "EN")}
+      {btn("uk", "УКР")}
+    </div>
+  );
+}
+
+export function MyJobsView({
+  cleanerName,
+  initialLanguage,
+}: {
+  cleanerName: string;
+  initialLanguage: Lang;
+}) {
   const [jobs, setJobs] = useState<MyJob[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [lang, setLang] = useState<Lang>(initialLanguage);
+  const t = STRINGS[lang];
 
   const load = useCallback(async () => {
     try {
@@ -83,13 +123,29 @@ export function MyJobsView({ cleanerName }: { cleanerName: string }) {
       setJobs(res.jobs);
       setError(null);
     } catch {
-      setError("Couldn't load your jobs. Pull down to try again.");
+      setError("loadError");
     }
   }, []);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  async function changeLanguage(next: Lang) {
+    if (next === lang) return;
+    const prev = lang;
+    // Optimistic — flip the UI now, persist in the background.
+    setLang(next);
+    try {
+      await apiFetch("/api/my/language", {
+        method: "PATCH",
+        body: { language: next },
+      });
+    } catch {
+      setLang(prev);
+      setError("actionError");
+    }
+  }
 
   async function advance(job: MyJob) {
     const next = NEXT_ACTION[job.status];
@@ -111,7 +167,7 @@ export function MyJobsView({ cleanerName }: { cleanerName: string }) {
       await load();
     } catch {
       setJobs(prevJobs ?? null);
-      setError("That didn't go through — try again.");
+      setError("actionError");
     } finally {
       setBusyId(null);
     }
@@ -125,14 +181,19 @@ export function MyJobsView({ cleanerName }: { cleanerName: string }) {
     }
   }
 
+  // Errors are stored as translation keys so they re-render in the right
+  // language if the cleaner flips the toggle while one is showing.
+  const errorText =
+    error === "loadError" ? t.loadError : error === "actionError" ? t.actionError : error;
+
   if (jobs === null && !error) {
     return (
       <div className="cleaner-wrap">
         <div style={{ width: 375, maxWidth: "100%" }}>
           <div className="phone">
             <div className="phone-head">
-              <h2>Hi {cleanerName}</h2>
-              <p>Loading your cleans…</p>
+              <h2>{t.hi(cleanerName)}</h2>
+              <p>{t.loading}</p>
             </div>
             <div className="phone-body" />
           </div>
@@ -153,30 +214,37 @@ export function MyJobsView({ cleanerName }: { cleanerName: string }) {
       <div style={{ width: 375, maxWidth: "100%" }}>
         <div className="phone">
           <div className="phone-head">
-            <h2>Hi {cleanerName}</h2>
-            <p>
-              {todays.length} clean{todays.length !== 1 ? "s" : ""} today · {upcoming.length}{" "}
-              upcoming
-            </p>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                gap: 8,
+              }}
+            >
+              <h2>{t.hi(cleanerName)}</h2>
+              <LangToggle lang={lang} onChange={changeLanguage} />
+            </div>
+            <p>{t.headline(todays.length, upcoming.length)}</p>
           </div>
           <div className="phone-body">
-            {error && (
+            {errorText && (
               <div className="alert" style={{ marginBottom: 12 }}>
-                {error}
+                {errorText}
               </div>
             )}
 
             {todays.length === 0 && upcoming.length === 0 && !error && (
               <div className="empty-state">
-                🎉 No cleans assigned.
+                {t.emptyLine1}
                 <br />
-                Enjoy the day off!
+                {t.emptyLine2}
               </div>
             )}
 
             {todays.length > 0 && (
               <>
-                <div className="section-label">Today</div>
+                <div className="section-label">{t.today}</div>
                 {todays.map((j) => (
                   <JobCard
                     key={j.id}
@@ -184,6 +252,7 @@ export function MyJobsView({ cleanerName }: { cleanerName: string }) {
                     isToday
                     busy={busyId === j.id}
                     onAdvance={() => advance(j)}
+                    t={t}
                   />
                 ))}
               </>
@@ -191,9 +260,16 @@ export function MyJobsView({ cleanerName }: { cleanerName: string }) {
 
             {upcoming.length > 0 && (
               <>
-                <div className="section-label">Upcoming</div>
+                <div className="section-label">{t.upcoming}</div>
                 {upcoming.map((j) => (
-                  <JobCard key={j.id} job={j} isToday={false} busy={false} onAdvance={() => {}} />
+                  <JobCard
+                    key={j.id}
+                    job={j}
+                    isToday={false}
+                    busy={false}
+                    onAdvance={() => {}}
+                    t={t}
+                  />
                 ))}
               </>
             )}
@@ -208,7 +284,7 @@ export function MyJobsView({ cleanerName }: { cleanerName: string }) {
             }}
             style={{ fontSize: 13, color: "var(--muted)", textDecoration: "underline" }}
           >
-            Log out
+            {t.logout}
           </a>
         </div>
       </div>
@@ -221,11 +297,13 @@ function JobCard({
   isToday,
   busy,
   onAdvance,
+  t,
 }: {
   job: MyJob;
   isToday: boolean;
   busy: boolean;
   onAdvance: () => void;
+  t: Strings;
 }) {
   const p = job.property;
   // Only trust an http(s) mapsUrl as an href; otherwise fall back to a Maps
@@ -237,27 +315,28 @@ function JobCard({
 
   let actionEl: React.ReactNode = null;
   if (isToday) {
-    if (job.status === "done") {
+    if (job.status === "completed") {
       actionEl = (
-        <button className="action-btn done" disabled>
-          ✅ Done — nice work!
+        <button className="action-btn completed" disabled>
+          {t.completed}
         </button>
       );
-    } else if (ACTION_LABEL[job.status]) {
+    } else if (ACTION_LABEL_KEY[job.status]) {
+      const label = t[ACTION_LABEL_KEY[job.status]] as string;
       actionEl = (
         <button
           className={`action-btn ${ACTION_CLASS[job.status]}`}
           onClick={onAdvance}
           disabled={busy}
         >
-          {busy ? "Saving…" : ACTION_LABEL[job.status]}
+          {busy ? t.saving : label}
         </button>
       );
     }
   } else {
     actionEl = (
       <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 10 }}>
-        Scheduled for {fmtDayLocal(job.date)}
+        {t.scheduledFor(fmtDayLocal(job.date, t.dateLocale))}
       </div>
     );
   }
@@ -280,22 +359,22 @@ function JobCard({
         📍 {p.address}
       </a>
       <div className="window">
-        ⏰ Arrive <b>{p.arriveTime}</b> — must be out by <b>{p.outByTime}</b>
+        ⏰ {t.arrive} <b>{p.arriveTime}</b> {t.mustBeOutBy} <b>{p.outByTime}</b>
       </div>
       {job.sameDayTurnover && (
         <div className="flagline">
           <span className="flag">
-            ⚡ Same-day turnover
+            {t.sameDayTurnover}
             {job.nextCheckinNote ? ` — ${job.nextCheckinNote}` : ""}
           </span>
         </div>
       )}
       <div className="notes">
-        🧭 <b>Directions:</b> {p.directions || "—"}
+        🧭 <b>{t.directions}</b> {p.directions || "—"}
         <br />
         {p.accessCode !== undefined && (
           <>
-            🔑 <b>Access:</b> {p.accessCode || "—"}
+            🔑 <b>{t.access}</b> {p.accessCode || "—"}
             <br />
           </>
         )}

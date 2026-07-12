@@ -34,18 +34,18 @@ export function monthPrefix(dateStr: string): string {
   return dateStr.slice(0, 7);
 }
 
-/** Filter jobs to those with status "done", optionally by month (YYYY-MM prefix on job.date). */
-export function filterDoneJobs(jobs: BillingJob[], month?: string): BillingJob[] {
+/** Filter jobs to those with status "completed", optionally by month (YYYY-MM prefix on job.date). */
+export function filterCompletedJobs(jobs: BillingJob[], month?: string): BillingJob[] {
   return jobs.filter((j) => {
-    if (j.status !== "done") return false;
+    if (j.status !== "completed") return false;
     if (month && monthPrefix(j.date) !== month) return false;
     return true;
   });
 }
 
 /**
- * Group done jobs by the owner of their property, computing unpaid totals in
- * cents. `propertiesById` maps propertyId -> { id, nickname, ownerId }.
+ * Group completed jobs by the owner of their property, computing unpaid
+ * totals in cents. `propertiesById` maps propertyId -> { id, nickname, ownerId }.
  */
 export function groupJobsByOwner(
   jobs: BillingJob[],
@@ -83,10 +83,10 @@ export function groupJobsByOwner(
   return Object.values(groups);
 }
 
-/** Sum unpaid (done, !paid) job costs in cents, optionally scoped to one owner's jobs. */
+/** Sum unpaid (completed, !paid) job costs in cents, optionally scoped to one owner's jobs. */
 export function unpaidTotalCents(jobs: BillingJob[]): number {
   return jobs
-    .filter((j) => j.status === "done" && !j.paid)
+    .filter((j) => j.status === "completed" && !j.paid)
     .reduce((sum, j) => sum + j.costCents, 0);
 }
 
@@ -99,7 +99,7 @@ export function filterByPaidStatus(
   return jobs.filter((j) => (status === "paid" ? j.paid : !j.paid));
 }
 
-/** IDs of done+unpaid jobs for an owner, optionally scoped by month — the set mark-owner-paid should bulk-update. */
+/** IDs of completed+unpaid jobs for an owner, optionally scoped by month — the set mark-owner-paid should bulk-update. */
 export function jobsToMarkPaid(
   jobs: BillingJob[],
   ownerId: string,
@@ -108,7 +108,7 @@ export function jobsToMarkPaid(
 ): string[] {
   return jobs
     .filter((j) => {
-      if (j.status !== "done" || j.paid) return false;
+      if (j.status !== "completed" || j.paid) return false;
       const property = propertiesById[j.propertyId];
       if (!property || property.ownerId !== ownerId) return false;
       if (month && monthPrefix(j.date) !== month) return false;

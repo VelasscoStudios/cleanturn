@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdminApi } from "@/lib/auth";
 import { billingQuerySchema } from "@/lib/validation";
-import { filterDoneJobs, filterByPaidStatus, groupJobsByOwner } from "@/lib/billing";
+import { filterCompletedJobs, filterByPaidStatus, groupJobsByOwner } from "@/lib/billing";
 
 export async function GET(req: Request) {
   const session = await requireAdminApi();
@@ -48,8 +48,8 @@ export async function GET(req: Request) {
       cleanerName: j.cleaner?.name ?? null,
     }));
 
-    const done = filterDoneJobs(billingJobs, month);
-    const filtered = filterByPaidStatus(done, status);
+    const completed = filterCompletedJobs(billingJobs, month);
+    const filtered = filterByPaidStatus(completed, status);
     const groups = groupJobsByOwner(filtered, propertiesById);
 
     // Attach owner display info.

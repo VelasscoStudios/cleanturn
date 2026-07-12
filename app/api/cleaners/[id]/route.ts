@@ -27,6 +27,7 @@ export async function GET(
         name: true,
         phone: true,
         email: true,
+        language: true,
         active: true,
         createdAt: true,
       },
@@ -78,6 +79,7 @@ export async function PATCH(
     if (data.name !== undefined) updateData.name = data.name;
     if (data.phone !== undefined) updateData.phone = data.phone;
     if (data.email !== undefined) updateData.email = data.email;
+    if (data.language !== undefined) updateData.language = data.language;
     if (data.active !== undefined) updateData.active = data.active;
     if (data.resetPin) {
       newPin = generatePin();
@@ -92,20 +94,21 @@ export async function PATCH(
         name: true,
         phone: true,
         email: true,
+        language: true,
         active: true,
       },
     });
 
     // Deactivating a cleaner must release their open jobs so the schedule
     // doesn't hold work against someone who can no longer log in. Terminal
-    // jobs (done/cancelled) keep their history.
+    // jobs (completed/cancelled) keep their history.
     if (data.active === false) {
       await prisma.job.updateMany({
         where: {
           cleanerId: id,
-          status: { in: ["assigned", "in_progress", "awaiting_confirm"] },
+          status: { in: ["assigned", "in_progress"] },
         },
-        data: { cleanerId: null, status: "unassigned", arrivedAt: null, leftAt: null },
+        data: { cleanerId: null, status: "assigned", arrivedAt: null, leftAt: null },
       });
     }
 

@@ -94,7 +94,7 @@ describe("reconcile — new bookings", () => {
 });
 
 describe("reconcile — moved bookings", () => {
-  it("detects a checkout date change and keeps cleaner/status (non-done job)", () => {
+  it("detects a checkout date change and keeps cleaner/status (non-completed job)", () => {
     const existing = [
       booking({
         icalUid: "uid-1",
@@ -114,18 +114,18 @@ describe("reconcile — moved bookings", () => {
         jobId: "job-1",
         newCheckinDate: "2026-07-01",
         newCheckoutDate: "2026-07-07",
-        resetDoneJob: false,
+        resetCompletedJob: false,
       },
     ]);
   });
 
-  it("flags resetDoneJob when a done job's checkout moves into the future", () => {
+  it("flags resetCompletedJob when a completed job's checkout moves into the future", () => {
     const existing = [
       booking({
         icalUid: "uid-1",
         checkinDate: "2026-07-01",
         checkoutDate: "2026-07-03",
-        job: { id: "job-1", status: "done", cleanerId: "cleaner-1" },
+        job: { id: "job-1", status: "completed", cleanerId: "cleaner-1" },
       }),
     ];
     // Moves to a date in the future relative to TODAY.
@@ -138,18 +138,18 @@ describe("reconcile — moved bookings", () => {
         jobId: "job-1",
         newCheckinDate: "2026-07-01",
         newCheckoutDate: "2026-07-20",
-        resetDoneJob: true,
+        resetCompletedJob: true,
       },
     ]);
   });
 
-  it("does not flag resetDoneJob when a done job's checkout changes but stays in the past", () => {
+  it("does not flag resetCompletedJob when a completed job's checkout changes but stays in the past", () => {
     const existing = [
       booking({
         icalUid: "uid-1",
         checkinDate: "2026-06-01",
         checkoutDate: "2026-06-03",
-        job: { id: "job-1", status: "done", cleanerId: "cleaner-1" },
+        job: { id: "job-1", status: "completed", cleanerId: "cleaner-1" },
       }),
     ];
     const events = [{ uid: "uid-1", checkin: "2026-06-01", checkout: "2026-06-04" }];
@@ -161,7 +161,7 @@ describe("reconcile — moved bookings", () => {
         jobId: "job-1",
         newCheckinDate: "2026-06-01",
         newCheckoutDate: "2026-06-04",
-        resetDoneJob: false,
+        resetCompletedJob: false,
       },
     ]);
   });
@@ -204,7 +204,7 @@ describe("reconcile — cancelled bookings", () => {
         icalUid: "uid-1",
         checkinDate: "2026-07-03",
         checkoutDate: "2026-07-08",
-        job: { id: "job-1", status: "unassigned", cleanerId: null },
+        job: { id: "job-1", status: "assigned", cleanerId: null },
       }),
     ];
     const result = reconcile(existing, [], TODAY);
@@ -219,7 +219,7 @@ describe("reconcile — cancelled bookings", () => {
         icalUid: "uid-1",
         checkinDate: "2026-06-01",
         checkoutDate: "2026-06-05", // < TODAY
-        job: { id: "job-1", status: "done", cleanerId: "cleaner-1" },
+        job: { id: "job-1", status: "completed", cleanerId: "cleaner-1" },
       }),
     ];
     const result = reconcile(existing, [], TODAY);
@@ -257,7 +257,7 @@ describe("reconcile — idempotency", () => {
         icalUid: "uid-1",
         checkinDate: "2026-07-10",
         checkoutDate: "2026-07-14",
-        job: { id: "job-1", status: "unassigned", cleanerId: null },
+        job: { id: "job-1", status: "assigned", cleanerId: null },
       }),
     ];
 
@@ -274,7 +274,7 @@ describe("reconcile — idempotency", () => {
         icalUid: "uid-1",
         checkinDate: "2026-07-01",
         checkoutDate: "2026-07-05",
-        job: { id: "job-1", status: "done", cleanerId: "cleaner-1" },
+        job: { id: "job-1", status: "completed", cleanerId: "cleaner-1" },
       }),
       booking({
         id: "b2",

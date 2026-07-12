@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { apiFetch } from "@/lib/client";
 import AssignSelect from "./AssignSelect";
+import StatusSelect from "./StatusSelect";
 import { formatCents } from "./format";
 
 type Cleaner = { id: string; name: string };
@@ -20,31 +23,38 @@ export type JobRowData = {
   cleanerName: string | null;
   sameDayTurnover: boolean;
   nextCheckinNote: string | null;
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  unassigned: "Unassigned",
-  assigned: "Assigned",
-  in_progress: "In progress",
-  awaiting_confirm: "Awaiting",
-  done: "Done ✅",
-  cancelled: "Cancelled",
-};
-
-const STATUS_CHIP_CLASS: Record<string, string> = {
-  unassigned: "unassigned",
-  assigned: "assigned",
-  in_progress: "in_progress",
-  awaiting_confirm: "awaiting",
-  done: "done",
-  cancelled: "cancelled",
+  manual: boolean;
 };
 
 // One dense schedule row. Click anywhere on the row (except the assign
 // dropdown) to expand the address / access code / directions detail line.
 export default function JobRow({ job, cleaners }: { job: JobRowData; cleaners: Cleaner[] }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
-  const unassigned = !job.cleanerId && job.status !== "cancelled";
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+  // "Unassigned" is not a status — it's the absence of a cleaner on a job
+  // that still needs doing.
+  const unassigned = !job.cleanerId && job.status === "assigned";
+
+  // Synced jobs are cancelled by the feed; a manual clean has no feed, so it
+  // needs an explicit way off the schedule.
+  async function cancelManual() {
+    setCancelling(true);
+    setCancelError(null);
+    try {
+      await apiFetch(`/api/jobs/${job.id}/status`, {
+        method: "PATCH",
+        body: { status: "cancelled" },
+      });
+      startTransition(() => router.refresh());
+    } catch (e) {
+      setCancelError(e instanceof Error ? e.message : "Failed to cancel");
+    } finally {
+      setCancelling(false);
+    }
+  }
 
   return (
     <>
@@ -56,6 +66,11 @@ export default function JobRow({ job, cleaners }: { job: JobRowData; cleaners: C
         <td className="c-time">{job.arriveTime}</td>
         <td className="c-prop">
           <span className="nick">{job.nickname}</span>
+          {job.manual && (
+            <span className="flag mini" title="Manual clean — not from the booking calendar">
+              ✍️ manual
+            </span>
+          )}
           {job.sameDayTurnover && (
             <span className="flag mini" title="Same-day turnover">
               ⚡{job.nextCheckinNote ? ` ${job.nextCheckinNote}` : ""}
@@ -72,10 +87,15 @@ export default function JobRow({ job, cleaners }: { job: JobRowData; cleaners: C
             cleaners={cleaners}
           />
         </td>
-        <td className="c-status">
-          <span className={`chip ${STATUS_CHIP_CLASS[job.status] ?? job.status}`}>
-            {STATUS_LABEL[job.status] ?? job.status}
-          </span>
+        {/* Unassigned jobs keep a read-only chip: their stage is driven by
+            the assign dropdown (picking a cleaner makes them Assigned). Once
+            a cleaner is set, the owner can move the stage to Completed. */}
+        <td className="c-status" onClick={(e) => e.stopPropagation()}>
+          {unassigned ? (
+            <span className="chip unassigned">Unassigned</span>
+          ) : (
+            <StatusSelect jobId={job.id} status={job.status} />
+          )}
         </td>
       </tr>
       {open && (
@@ -87,6 +107,24 @@ export default function JobRow({ job, cleaners }: { job: JobRowData; cleaners: C
               <span>📍 {job.address || "—"}</span>
               <span>🔑 {job.accessCode || "—"}</span>
               {job.directions ? <span>🧭 {job.directions}</span> : null}
+              {job.manual && job.status !== "cancelled" && job.status !== "completed" && (
+                <span onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    className="cancel"
+                    style={{ color: "var(--red)", borderColor: "var(--red)" }}
+                    onClick={cancelManual}
+                    disabled={cancelling}
+                  >
+                    {cancelling ? "Cancelling…" : "Cancel manual clean"}
+                  </button>
+                  {cancelError && (
+                    <span style={{ color: "var(--red)", fontSize: 11, marginLeft: 6 }}>
+                      {cancelError}
+                    </span>
+                  )}
+                </span>
+              )}
             </div>
           </td>
         </tr>

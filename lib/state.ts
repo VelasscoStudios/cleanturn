@@ -3,33 +3,30 @@
  *
  * Cleaner-driven transitions are strictly forward, one step at a time, and
  * only permitted on the cleaner's OWN job:
- *   assigned -> in_progress -> awaiting_confirm -> done
+ *   assigned -> in_progress -> completed
  * Each transition stamps a timestamp server-side:
- *   assigned -> in_progress        stamps arrivedAt
- *   in_progress -> awaiting_confirm stamps leftAt
- *   awaiting_confirm -> done        stamps cleanedAt
+ *   assigned -> in_progress stamps arrivedAt
+ *   in_progress -> completed stamps cleanedAt
+ * "cancelled" is deliberately unreachable from the cleaner path: only an
+ * admin (the owner) or the iCal sync (a booking disappearing from the feed)
+ * may cancel a job.
  *
  * Admins may set any status (corrections) without the forward-only guard,
  * subject only to the JOB_STATUSES enum. Admin transitions still stamp the
  * appropriate timestamp fields when moving forward through the normal
  * sequence, but are not restricted to it (e.g. an admin can jump straight to
- * "done" or move a job backwards).
+ * "completed" or move a job backwards).
+ *
+ * There is no "unassigned" status: whether a job has a cleaner is carried by
+ * cleanerId alone (null = unassigned), so the two axes can't disagree.
  */
 
-export type JobStatus =
-  | "unassigned"
-  | "assigned"
-  | "in_progress"
-  | "awaiting_confirm"
-  | "done"
-  | "cancelled";
+export type JobStatus = "assigned" | "in_progress" | "completed" | "cancelled";
 
 export const JOB_STATUSES: readonly JobStatus[] = [
-  "unassigned",
   "assigned",
   "in_progress",
-  "awaiting_confirm",
-  "done",
+  "completed",
   "cancelled",
 ];
 
@@ -40,17 +37,15 @@ export function isJobStatus(value: string): value is JobStatus {
 /** The single legal next status for a cleaner-driven forward transition. */
 const CLEANER_FORWARD: Partial<Record<JobStatus, JobStatus>> = {
   assigned: "in_progress",
-  in_progress: "awaiting_confirm",
-  awaiting_confirm: "done",
+  in_progress: "completed",
 };
 
-export type TimestampField = "arrivedAt" | "leftAt" | "cleanedAt";
+export type TimestampField = "arrivedAt" | "cleanedAt";
 
 /** Which timestamp field a transition stamps, keyed by the resulting status. */
 const STAMP_FOR_RESULT: Partial<Record<JobStatus, TimestampField>> = {
   in_progress: "arrivedAt",
-  awaiting_confirm: "leftAt",
-  done: "cleanedAt",
+  completed: "cleanedAt",
 };
 
 export type JobLike = {
@@ -135,9 +130,9 @@ export function dayDiff(a: string, b: string): number {
 /**
  * Access code is included in a cleaner's job payload ONLY when the job is
  * assigned to that cleaner AND the job date is within 1 day of today
- * (|job.date - today| <= 1). Never true for unassigned jobs or other
- * cleaners' jobs — callers must additionally ensure the job belongs to the
- * requesting cleaner before calling this.
+ * (|job.date - today| <= 1). Never true for unassigned (cleanerId null) jobs
+ * or other cleaners' jobs — callers must additionally ensure the job belongs
+ * to the requesting cleaner before calling this.
  */
 export function accessCodeVisible(
   job: { status: string; cleanerId: string | null; date: string },
@@ -145,13 +140,13 @@ export function accessCodeVisible(
   today: string
 ): boolean {
   if (job.cleanerId !== requestingCleanerId) return false;
-  if (job.status === "unassigned" || job.status === "cancelled") return false;
+  if (job.status === "cancelled") return false;
   return dayDiff(job.date, today) <= 1;
 }
 
 /**
  * Whether a job (by date + status) belongs on a cleaner's /my/jobs list:
- * today + future, plus yesterday if not done. Pure date/status check —
+ * today + future, plus yesterday if not completed. Pure date/status check —
  * cleaner-ownership must be checked separately by the caller.
  */
 export function isVisibleOnMyJobs(
@@ -160,6 +155,6 @@ export function isVisibleOnMyJobs(
 ): boolean {
   if (job.date >= today) return true;
   const yesterday = dayDiff(job.date, today) === 1 && job.date < today;
-  if (yesterday && job.status !== "done") return true;
+  if (yesterday && job.status !== "completed") return true;
   return false;
 }
