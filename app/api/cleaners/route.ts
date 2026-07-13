@@ -23,6 +23,7 @@ export async function GET() {
         name: true,
         phone: true,
         email: true,
+        language: true,
         active: true,
         createdAt: true,
       },
@@ -65,6 +66,7 @@ export async function POST(req: Request) {
         name: data.name,
         phone: data.phone,
         email: data.email ?? null,
+        language: data.language,
         pinHash,
       },
     });
@@ -77,6 +79,7 @@ export async function POST(req: Request) {
           name: cleaner.name,
           phone: cleaner.phone,
           email: cleaner.email,
+          language: cleaner.language,
           active: cleaner.active,
         },
         pin,

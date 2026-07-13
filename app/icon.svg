@@ -1,0 +1,26 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Cleanturn Home Droplet Icon</title>
+  <desc id="desc">A simple home icon with a water droplet inside for Cleanturn.</desc>
+
+  <rect width="512" height="512" rx="112" fill="#F4FBF8"/>
+
+  <!-- House outline -->
+  <path d="M128 248L256 140L384 248" 
+        stroke="#0B7A5B" 
+        stroke-width="36" 
+        stroke-linecap="round" 
+        stroke-linejoin="round"/>
+
+  <path d="M166 246V378C166 392.4 177.6 404 192 404H320C334.4 404 346 392.4 346 378V246" 
+        stroke="#0B7A5B" 
+        stroke-width="36" 
+        stroke-linecap="round" 
+        stroke-linejoin="round"/>
+
+  <!-- Droplet -->
+  <path d="M256 230C256 230 211 284 211 322C211 349.6 231.1 371 256 371C280.9 371 301 349.6 301 322C301 284 256 230 256 230Z" 
+        fill="#5FD6A5" 
+        stroke="#13A66B" 
+        stroke-width="18" 
+        stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,23 @@
+[Unit]
+Description=CleanTurn iCal sync tick (curls /api/cron/sync on localhost)
+After=cleanturn.service
+Wants=cleanturn.service
+
+[Service]
+Type=oneshot
+User=cleanturn
+Group=cleanturn
+# The Bearer token is read from a root-generated, 0600 header file (written by
+# release.sh from CRON_SECRET in shared/.env) so the secret never appears in
+# the command line (/proc/*/cmdline) or `systemctl show` output.
+# --retry-connrefused rides out the few seconds the port is down while a
+# deploy restarts the app; --max-time caps a wedged run (the sync itself keeps
+# running in-process — runSync logs its own completion line to the app journal,
+# which is the authoritative record if curl gives up first).
+ExecStart=/usr/bin/curl -fsS --max-time 300 --retry 5 --retry-connrefused --retry-delay 3 -X POST -H @/opt/cleanturn/shared/cron-auth.header http://127.0.0.1:3100/api/cron/sync
+
+# Hardening (mirrors cleanturn.service)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true

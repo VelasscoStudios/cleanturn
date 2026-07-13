@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   monthPrefix,
-  filterDoneJobs,
+  filterCompletedJobs,
   groupJobsByOwner,
   unpaidTotalCents,
   filterByPaidStatus,
@@ -22,7 +22,7 @@ function job(overrides: Partial<BillingJob>): BillingJob {
     propertyId: "p1",
     date: "2026-07-01",
     costCents: 6500,
-    status: "done",
+    status: "completed",
     paid: false,
     paidAt: null,
     cleanerId: "c1",
@@ -36,30 +36,30 @@ describe("monthPrefix", () => {
   });
 });
 
-describe("filterDoneJobs", () => {
-  it("keeps only done jobs", () => {
+describe("filterCompletedJobs", () => {
+  it("keeps only completed jobs", () => {
     const jobs = [
-      job({ id: "a", status: "done" }),
+      job({ id: "a", status: "completed" }),
       job({ id: "b", status: "assigned" }),
       job({ id: "c", status: "cancelled" }),
     ];
-    const result = filterDoneJobs(jobs);
+    const result = filterCompletedJobs(jobs);
     expect(result.map((j) => j.id)).toEqual(["a"]);
   });
 
   it("filters additionally by month prefix on job.date", () => {
     const jobs = [
-      job({ id: "a", status: "done", date: "2026-06-30" }),
-      job({ id: "b", status: "done", date: "2026-07-01" }),
-      job({ id: "c", status: "done", date: "2026-07-15" }),
+      job({ id: "a", status: "completed", date: "2026-06-30" }),
+      job({ id: "b", status: "completed", date: "2026-07-01" }),
+      job({ id: "c", status: "completed", date: "2026-07-15" }),
     ];
-    const result = filterDoneJobs(jobs, "2026-07");
+    const result = filterCompletedJobs(jobs, "2026-07");
     expect(result.map((j) => j.id).sort()).toEqual(["b", "c"]);
   });
 });
 
 describe("groupJobsByOwner", () => {
-  it("groups done jobs by the owner of their property", () => {
+  it("groups completed jobs by the owner of their property", () => {
     const jobs = [
       job({ id: "a", propertyId: "p1", costCents: 6500, paid: false }),
       job({ id: "b", propertyId: "p2", costCents: 9000, paid: true }),
@@ -94,10 +94,10 @@ describe("groupJobsByOwner", () => {
 });
 
 describe("unpaidTotalCents", () => {
-  it("sums only done + unpaid jobs", () => {
+  it("sums only completed + unpaid jobs", () => {
     const jobs = [
-      job({ id: "a", status: "done", paid: false, costCents: 1000 }),
-      job({ id: "b", status: "done", paid: true, costCents: 2000 }),
+      job({ id: "a", status: "completed", paid: false, costCents: 1000 }),
+      job({ id: "b", status: "completed", paid: true, costCents: 2000 }),
       job({ id: "c", status: "assigned", paid: false, costCents: 3000 }),
     ];
     expect(unpaidTotalCents(jobs)).toBe(1000);
@@ -128,13 +128,13 @@ describe("filterByPaidStatus", () => {
 });
 
 describe("jobsToMarkPaid", () => {
-  it("selects only done+unpaid jobs for the given owner", () => {
+  it("selects only completed+unpaid jobs for the given owner", () => {
     const jobs = [
-      job({ id: "a", propertyId: "p1", status: "done", paid: false }), // owner-1
-      job({ id: "b", propertyId: "p2", status: "done", paid: false }), // owner-1
-      job({ id: "c", propertyId: "p1", status: "done", paid: true }), // already paid
-      job({ id: "d", propertyId: "p3", status: "done", paid: false }), // owner-2
-      job({ id: "e", propertyId: "p1", status: "assigned", paid: false }), // not done
+      job({ id: "a", propertyId: "p1", status: "completed", paid: false }), // owner-1
+      job({ id: "b", propertyId: "p2", status: "completed", paid: false }), // owner-1
+      job({ id: "c", propertyId: "p1", status: "completed", paid: true }), // already paid
+      job({ id: "d", propertyId: "p3", status: "completed", paid: false }), // owner-2
+      job({ id: "e", propertyId: "p1", status: "assigned", paid: false }), // not completed
     ];
     const ids = jobsToMarkPaid(jobs, "owner-1", properties);
     expect(ids.sort()).toEqual(["a", "b"]);
@@ -142,15 +142,15 @@ describe("jobsToMarkPaid", () => {
 
   it("scopes to a month when provided", () => {
     const jobs = [
-      job({ id: "a", propertyId: "p1", status: "done", paid: false, date: "2026-06-15" }),
-      job({ id: "b", propertyId: "p1", status: "done", paid: false, date: "2026-07-15" }),
+      job({ id: "a", propertyId: "p1", status: "completed", paid: false, date: "2026-06-15" }),
+      job({ id: "b", propertyId: "p1", status: "completed", paid: false, date: "2026-07-15" }),
     ];
     const ids = jobsToMarkPaid(jobs, "owner-1", properties, "2026-07");
     expect(ids).toEqual(["b"]);
   });
 
   it("returns an empty array when nothing matches", () => {
-    const jobs = [job({ id: "a", propertyId: "p1", status: "done", paid: true })];
+    const jobs = [job({ id: "a", propertyId: "p1", status: "completed", paid: true })];
     expect(jobsToMarkPaid(jobs, "owner-1", properties)).toEqual([]);
   });
 });

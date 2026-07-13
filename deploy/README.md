@@ -85,6 +85,25 @@ systemctl restart cleanturn       # manual restart
 ls -1dt /opt/cleanturn/releases   # release history (newest first)
 ```
 
+### Automatic iCal sync
+
+A systemd timer syncs every property's feed every 10 minutes —
+`cleanturn-sync.timer` fires the oneshot `cleanturn-sync.service`, which curls
+`POST 127.0.0.1:3100/api/cron/sync` with the Bearer token read from
+`shared/cron-auth.header` (regenerated from `CRON_SECRET` by `release.sh` on
+every deploy, which also installs/enables both units). The open `/admin` page
+re-reads the DB every minute, so bookings appear with no interaction.
+
+```sh
+systemctl list-timers cleanturn-sync.timer   # next/last tick
+journalctl -u cleanturn-sync.service -n 20   # tick history (curl output)
+journalctl -u cleanturn | grep '\[sync\]'    # authoritative per-run counts
+```
+
+`GET /api/health` reports `syncFresh: false` when the newest successful sync
+is older than 35 minutes — point any uptime pinger at it to catch a dead
+timer, since in-app alerts can only fire while syncs are running.
+
 **Manual rollback** to the previous release:
 
 ```sh
@@ -96,5 +115,18 @@ systemctl restart cleanturn
 
 - **TLS**: point a domain at the droplet and run `certbot --nginx` for HTTPS,
   then set `APP_URL=https://your-domain` in `shared/.env`.
-- **Backups**: the whole DB is one file — `cp /opt/cleanturn/shared/data/prod.db`
-  on a schedule (SQLite `.backup` for a consistent copy under load).
+- **Backups**: every deploy snapshots the DB to `shared/backups/` before
+  migrating (last 5 kept). To restore one after a bad deploy:
+
+  ```sh
+  systemctl stop cleanturn cleanturn-sync.timer
+  cp /opt/cleanturn/shared/backups/<snapshot>.db /opt/cleanturn/shared/data/prod.db
+  rm -f /opt/cleanturn/shared/data/prod.db-wal /opt/cleanturn/shared/data/prod.db-shm
+  systemctl start cleanturn cleanturn-sync.timer
+  ```
+
+  Deploy-time snapshots don't cover data loss between deploys — for that,
+  also copy `shared/data/prod.db` off-box on a schedule (SQLite `.backup`
+  for a consistent copy under load). Installing `sqlite3` on the droplet
+  (`apt-get install -y sqlite3`) upgrades the deploy snapshot from a file
+  copy to a `.backup`-consistent one.

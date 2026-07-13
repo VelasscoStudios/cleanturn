@@ -23,7 +23,7 @@ export default async function OwnersPage() {
           id: true,
           nickname: true,
           jobs: {
-            where: { status: "done", paid: false },
+            where: { status: "completed", paid: false },
             select: { costCents: true },
           },
         },

@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { requireRolePage } from "@/lib/auth";
 import { fmtDay } from "@/lib/dates";
 import {
-  filterDoneJobs,
+  filterCompletedJobs,
   filterByPaidStatus,
   groupJobsByOwner,
   type BillingJob,
@@ -65,8 +65,8 @@ export default async function BillingPage({
     cleanerName: j.cleaner?.name ?? null,
   }));
 
-  const done = filterDoneJobs(billingJobs, monthFilter);
-  const filtered = filterByPaidStatus(done, statusFilter);
+  const completed = filterCompletedJobs(billingJobs, monthFilter);
+  const filtered = filterByPaidStatus(completed, statusFilter);
   const groups = groupJobsByOwner(filtered, propertiesById);
 
   const ownerIds = groups.map((g) => g.ownerId);
@@ -111,7 +111,7 @@ export default async function BillingPage({
                         <MarkAllPaidButton ownerId={group.ownerId} />
                       </>
                     ) : (
-                      <span className="chip done">All settled ✅</span>
+                      <span className="chip completed">All settled ✅</span>
                     )}
                   </div>
                 </div>
@@ -126,7 +126,7 @@ export default async function BillingPage({
                     <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
                       <b>{formatCents(job.costCents)}</b>
                       {job.paid ? (
-                        <span className="chip done">Paid</span>
+                        <span className="chip completed">Paid</span>
                       ) : (
                         <MarkPaidButton jobId={job.id} />
                       )}

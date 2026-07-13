@@ -7,6 +7,7 @@ export type CleanerRow = {
   name: string;
   phone: string;
   email: string | null;
+  language: string;
   active: boolean;
 };
 
@@ -14,7 +15,7 @@ export default async function CleanersPage() {
   await requireRolePage("admin");
 
   const cleaners = await prisma.cleaner.findMany({
-    select: { id: true, name: true, phone: true, email: true, active: true },
+    select: { id: true, name: true, phone: true, email: true, language: true, active: true },
     orderBy: { createdAt: "asc" },
   });
 

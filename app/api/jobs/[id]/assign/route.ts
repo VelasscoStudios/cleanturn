@@ -48,17 +48,15 @@ export async function PATCH(
     }
 
     const wasUnassigned = job.cleanerId === null;
-    const nextStatus = cleanerId
-      ? job.status === "unassigned"
-        ? "assigned"
-        : job.status
-      : "unassigned";
+    // Removing the cleaner from an in-progress job resets it to assigned
+    // (nobody is on site anymore); terminal/assigned statuses are kept.
+    const resetInProgress = !cleanerId && job.status === "in_progress";
 
     const updated = await prisma.job.update({
       where: { id },
       data: {
         cleanerId,
-        status: nextStatus,
+        ...(resetInProgress ? { status: "assigned", arrivedAt: null } : {}),
       },
     });
 

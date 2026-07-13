@@ -336,7 +336,7 @@ Threat model: internet-exposed internal tool. Attackers are bots/opportunists; a
 ### Workflows
 - **ci.yml** (push/PR): install → prisma generate → typecheck → lint → vitest → build. Playwright smoke on PRs to main.
 - **deploy.yml** (push to main, after CI): build image → push `ghcr.io/<org>/cleanturn:sha` + `:latest` → SSH to VPS → `docker compose pull && docker compose up -d` → app entrypoint runs `prisma migrate deploy` before `next start` → curl `/api/health` (fail = keep previous image running; compose keeps old container until new one is healthy — use `depends_on` + healthcheck).
-- **sync.yml**: `schedule: "*/30 * * * *"` + `workflow_dispatch` → `curl -fsS -X POST -H "Authorization: Bearer $CRON_SECRET" $APP_URL/api/cron/sync`. Job fails visibly in Actions tab if endpoint errors.
+- ~~**sync.yml**~~ **Superseded**: scheduled sync runs on the droplet itself via a systemd timer (`deploy/cleanturn-sync.timer`, every 10 min, `Persistent=true`) curling `POST 127.0.0.1:3100/api/cron/sync` with the Bearer secret read from a root-generated header file. GitHub Actions cron was rejected: best-effort scheduling (15–60 min drift), auto-disabled on repo inactivity, and an external dependency for a droplet-local job. Check it with `systemctl list-timers cleanturn-sync.timer` / `journalctl -u cleanturn-sync.service`.
 - **backup-check.yml**: daily; verifies newest restic snapshot < 26h old; monthly full restore test.
 
 ### Environment variables

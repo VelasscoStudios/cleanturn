@@ -8,11 +8,16 @@ export default async function MyJobsPage() {
 
   const cleaner = await prisma.cleaner.findUnique({
     where: { id: session.id },
-    select: { name: true, active: true },
+    select: { name: true, active: true, language: true },
   });
   if (!cleaner || !cleaner.active) {
     redirect("/login");
   }
 
-  return <MyJobsView cleanerName={cleaner.name} />;
+  return (
+    <MyJobsView
+      cleanerName={cleaner.name}
+      initialLanguage={cleaner.language === "uk" ? "uk" : "en"}
+    />
+  );
 }

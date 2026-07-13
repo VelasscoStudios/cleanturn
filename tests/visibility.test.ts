@@ -44,7 +44,7 @@ describe("accessCodeVisible — access-code ±1-day rule", () => {
   });
 
   it("is false when date is 2 days in the past", () => {
-    const job = { status: "done", cleanerId: "c1", date: "2026-07-04" };
+    const job = { status: "completed", cleanerId: "c1", date: "2026-07-04" };
     expect(accessCodeVisible(job, "c1", today)).toBe(false);
   });
 
@@ -53,8 +53,8 @@ describe("accessCodeVisible — access-code ±1-day rule", () => {
     expect(accessCodeVisible(job, "c1", today)).toBe(false);
   });
 
-  it("is false when job is unassigned even if requester matches somehow", () => {
-    const job = { status: "unassigned", cleanerId: null, date: "2026-07-06" };
+  it("is false when job has no cleaner (unassigned) even if requester matches somehow", () => {
+    const job = { status: "assigned", cleanerId: null, date: "2026-07-06" };
     expect(accessCodeVisible(job, "c1", today)).toBe(false);
   });
 
@@ -63,13 +63,13 @@ describe("accessCodeVisible — access-code ±1-day rule", () => {
     expect(accessCodeVisible(job, "c1", today)).toBe(false);
   });
 
-  it("is true for a done job within the window (still same-day/adjacent visibility)", () => {
-    const job = { status: "done", cleanerId: "c1", date: "2026-07-06" };
+  it("is true for a completed job within the window (still same-day/adjacent visibility)", () => {
+    const job = { status: "completed", cleanerId: "c1", date: "2026-07-06" };
     expect(accessCodeVisible(job, "c1", today)).toBe(true);
   });
 });
 
-describe("isVisibleOnMyJobs — today + future, plus yesterday if not done", () => {
+describe("isVisibleOnMyJobs — today + future, plus yesterday if not completed", () => {
   const today = "2026-07-06";
 
   it("today's job is visible", () => {
@@ -80,19 +80,19 @@ describe("isVisibleOnMyJobs — today + future, plus yesterday if not done", () 
     expect(isVisibleOnMyJobs({ status: "assigned", date: "2026-07-09" }, today)).toBe(true);
   });
 
-  it("yesterday's not-done job is visible", () => {
+  it("yesterday's not-completed job is visible", () => {
     expect(isVisibleOnMyJobs({ status: "in_progress", date: "2026-07-05" }, today)).toBe(true);
   });
 
-  it("yesterday's done job is NOT visible", () => {
-    expect(isVisibleOnMyJobs({ status: "done", date: "2026-07-05" }, today)).toBe(false);
+  it("yesterday's completed job is NOT visible", () => {
+    expect(isVisibleOnMyJobs({ status: "completed", date: "2026-07-05" }, today)).toBe(false);
   });
 
-  it("job from 2+ days ago is not visible even if not done", () => {
+  it("job from 2+ days ago is not visible even if not completed", () => {
     expect(isVisibleOnMyJobs({ status: "assigned", date: "2026-07-03" }, today)).toBe(false);
   });
 
-  it("job from 2+ days ago that is done is not visible", () => {
-    expect(isVisibleOnMyJobs({ status: "done", date: "2026-07-01" }, today)).toBe(false);
+  it("job from 2+ days ago that is completed is not visible", () => {
+    expect(isVisibleOnMyJobs({ status: "completed", date: "2026-07-01" }, today)).toBe(false);
   });
 });

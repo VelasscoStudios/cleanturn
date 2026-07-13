@@ -138,6 +138,24 @@ body {
   gap: 6px;
   cursor: pointer;
 }
+/* Phone: even two-column grid instead of a ragged wrap; the checkbox
+   (schedule) / month picker (billing) row spans the full width. */
+@media (max-width: 640px) {
+  .filters {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .filters select {
+    width: 100%;
+    min-width: 0;
+  }
+  .filters label {
+    grid-column: 1 / -1;
+  }
+  .filters label input[type="month"] {
+    width: 100%;
+  }
+}
 .day-group {
   margin-bottom: 20px;
 }
@@ -217,18 +235,31 @@ body {
   background: var(--amber-bg);
   color: var(--amber);
 }
-.chip.awaiting,
-.chip.awaiting_confirm {
-  background: #ede9fe;
-  color: #6d28d9;
-}
-.chip.done {
+.chip.completed {
   background: var(--green-bg);
   color: var(--green);
 }
 .chip.cancelled {
   background: var(--gray-bg);
   color: var(--muted);
+}
+/* Status dropdown styled to read as a chip, with a caret to hint it's
+   editable. Selector matches .chip.<status> specificity so the caret
+   background-image survives those rules' `background` shorthand. */
+select.chip.chip-select {
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  padding-right: 20px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23666'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+}
+select.chip.chip-select:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 .job select {
   padding: 7px 8px;
@@ -241,6 +272,173 @@ body {
 .job select.empty {
   border-color: var(--red);
   color: var(--red);
+}
+
+/* ── Dense schedule table (one row per clean, click to expand) ───────── */
+.day-count {
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--muted);
+  margin-left: 10px;
+  font-size: 12px;
+}
+.sched-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+}
+table.sched {
+  width: 100%;
+  border-collapse: collapse;
+}
+.sched .srow {
+  border-top: 1px solid var(--line);
+  cursor: pointer;
+}
+.sched tbody .srow:first-child,
+.sched .srow:first-child {
+  border-top: none;
+}
+.sched .srow:hover {
+  background: rgba(15, 118, 110, 0.04);
+}
+.sched td {
+  padding: 7px 10px;
+  font-size: 13px;
+  vertical-align: middle;
+}
+.sched .c-caret {
+  width: 22px;
+  padding-left: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+.sched .c-time {
+  width: 54px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sched .c-prop .nick {
+  font-weight: 600;
+  font-size: 14px;
+}
+.sched .c-cost {
+  width: 66px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.sched .c-assign {
+  width: 152px;
+}
+.sched .c-assign select {
+  min-width: 132px;
+  padding: 5px 6px;
+  font-size: 12px;
+}
+.sched .c-status {
+  width: 122px;
+  text-align: right;
+}
+/* Red left-accent on the caret cell for unassigned rows. */
+.sched .srow.unassigned .c-caret {
+  border-left: 3px solid var(--red);
+  padding-left: 5px;
+}
+.flag.mini {
+  font-size: 10px;
+  padding: 1px 5px;
+  margin-left: 6px;
+}
+.sched .srow-detail td {
+  background: rgba(15, 118, 110, 0.03);
+  padding-top: 2px;
+  padding-bottom: 9px;
+}
+.sched .detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.sched .detail span {
+  overflow-wrap: anywhere;
+}
+/* Phone layout: fixed column widths total ~470px, so the table would scroll
+   sideways and the expanded detail would run off-screen. Drop table layout
+   and render each clean as a two-line card; the detail expands full-width
+   underneath. */
+@media (max-width: 640px) {
+  table.sched,
+  .sched tbody {
+    display: block;
+    width: 100%;
+  }
+  .sched .srow {
+    display: grid;
+    grid-template-columns: 16px 44px 1fr auto;
+    grid-template-areas:
+      "caret time prop cost"
+      ".     assign assign status";
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 8px;
+    padding: 9px 10px;
+  }
+  .sched .srow td {
+    display: block;
+    width: auto;
+    padding: 0;
+    border: 0;
+  }
+  .sched .c-caret {
+    grid-area: caret;
+  }
+  .sched .c-time {
+    grid-area: time;
+  }
+  .sched .c-prop {
+    grid-area: prop;
+  }
+  .sched .c-cost {
+    grid-area: cost;
+  }
+  .sched .c-assign {
+    grid-area: assign;
+  }
+  .sched .c-assign select {
+    min-width: 0;
+    width: 100%;
+    max-width: 220px;
+  }
+  .sched .c-status {
+    grid-area: status;
+  }
+  /* The red unassigned accent moves from the caret cell to the whole card. */
+  .sched .srow.unassigned {
+    border-left: 3px solid var(--red);
+    padding-left: 7px;
+  }
+  .sched .srow.unassigned .c-caret {
+    border-left: none;
+    padding-left: 0;
+  }
+  .sched .srow-detail {
+    display: block;
+    border-top: 1px dashed var(--line);
+  }
+  .sched .srow-detail td {
+    display: block;
+    padding: 8px 10px 10px 34px;
+  }
+  .sched .srow-detail td:first-child {
+    display: none;
+  }
 }
 .toast {
   position: fixed;
@@ -369,6 +567,7 @@ th {
   margin-top: 2px;
   text-decoration: underline;
   cursor: pointer;
+  overflow-wrap: anywhere;
 }
 .ccard .notes {
   font-size: 13px;
@@ -378,6 +577,7 @@ th {
   padding: 8px 10px;
   border-radius: 8px;
   line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 .ccard .window {
   font-size: 13px;
@@ -405,13 +605,10 @@ th {
 .action-btn.arrive {
   background: var(--blue);
 }
-.action-btn.leave {
-  background: var(--amber);
-}
 .action-btn.clean {
   background: var(--green);
 }
-.action-btn.done {
+.action-btn.completed {
   background: var(--green-bg);
   color: var(--green);
   cursor: default;
