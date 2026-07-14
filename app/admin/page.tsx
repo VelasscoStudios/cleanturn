@@ -7,6 +7,7 @@ import SyncNowButton from "./_components/SyncNowButton";
 import AutoRefresh from "./_components/AutoRefresh";
 import JobRow from "./_components/JobRow";
 import AddCleanButton from "./_components/AddCleanButton";
+import AddNoteButton from "./_components/AddNoteButton";
 
 export default async function SchedulePage({
   searchParams,
@@ -49,7 +50,7 @@ export default async function SchedulePage({
     }
   }
 
-  const [jobs, properties, cleaners, lastSync] = await Promise.all([
+  const [jobs, properties, cleanersRaw, lastSync, noteJobOptions] = await Promise.all([
     prisma.job.findMany({
       where: {
         date: {
@@ -73,7 +74,20 @@ export default async function SchedulePage({
             directions: true,
           },
         },
-        cleaner: { select: { id: true, name: true } },
+        cleaner: {
+          select: {
+            id: true,
+            name: true,
+            notes: {
+              select: { id: true, body: true, date: true },
+              orderBy: { createdAt: "desc" },
+            },
+          },
+        },
+        notes: {
+          select: { id: true, body: true, date: true },
+          orderBy: { createdAt: "desc" },
+        },
       },
       // Past views read newest-first (most recent clean on top).
       orderBy: [{ date: isPastView ? "desc" : "asc" }, { createdAt: "asc" }],
@@ -85,19 +99,33 @@ export default async function SchedulePage({
     }),
     prisma.cleaner.findMany({
       where: { active: true },
-      select: { id: true, name: true },
+      select: { id: true, name: true, _count: { select: { notes: true } } },
       orderBy: { name: "asc" },
     }),
     prisma.property.aggregate({ _max: { lastSyncAt: true } }),
+    // Recent jobs for the "Add note" modal's job picker (matches app/admin/notes/page.tsx).
+    prisma.job.findMany({
+      select: { id: true, date: true, property: { select: { nickname: true } } },
+      orderBy: { date: "desc" },
+      take: 60,
+    }),
   ]);
 
-  // Unassigned-in-next-48h banner: computed across the full 48h window
-  // regardless of the current filters (matches prototype behavior).
+  // Flag cleaners who have linked notes (e.g. "cannot clean houses larger
+  // than 3 beds") so the admin sees a marker while assigning.
+  const cleaners = cleanersRaw.map((c) => ({
+    id: c.id,
+    name: c.name,
+    hasNotes: c._count.notes > 0,
+  }));
+
+  // Unassigned-in-next-7-days banner: computed across the full 7-day window
+  // regardless of the current filters.
   const unassignedSoon = await prisma.job.count({
     where: {
       cleanerId: null,
       status: { not: "cancelled" },
-      date: { gte: today, lte: addDays(today, 2) },
+      date: { gte: today, lte: addDays(today, 7) },
     },
   });
 
@@ -124,22 +152,29 @@ export default async function SchedulePage({
       <AutoRefresh />
       <SyncNowButton lastSyncedLabel={lastSyncedLabel} />
 
-      {unassignedSoon > 0 ? (
+      {unassignedSoon > 0 && (
         <div className="alert">
-          ⚠️ {unassignedSoon} unassigned clean{unassignedSoon > 1 ? "s" : ""} in the next 48 hours
+          ⚠️ {unassignedSoon} unassigned clean{unassignedSoon > 1 ? "s" : ""} in the next 7 days
         </div>
-      ) : (
-        <div className="alert ok">✅ All cleans in the next 48h are assigned</div>
       )}
 
-      <AddCleanButton
-        properties={properties.map((p) => ({
-          id: p.id,
-          name: p.nickname,
-          cleanCostCents: p.cleanCostCents,
-        }))}
-        cleaners={cleaners}
-      />
+      <div className="btn-row">
+        <AddCleanButton
+          properties={properties.map((p) => ({
+            id: p.id,
+            name: p.nickname,
+            cleanCostCents: p.cleanCostCents,
+          }))}
+          cleaners={cleaners}
+        />
+        <AddNoteButton
+          cleaners={cleaners}
+          jobs={noteJobOptions.map((j) => ({
+            id: j.id,
+            label: `${j.property.nickname} - ${j.date}`,
+          }))}
+        />
+      </div>
 
       <Suspense fallback={<div className="filters" />}>
         <ScheduleFilters
@@ -189,6 +224,8 @@ export default async function SchedulePage({
                           sameDayTurnover: job.sameDayTurnover,
                           nextCheckinNote: job.nextCheckinNote,
                           manual: job.bookingId === null,
+                          notes: job.notes,
+                          cleanerNotes: job.cleaner?.notes ?? [],
                         }}
                       />
                     ))}

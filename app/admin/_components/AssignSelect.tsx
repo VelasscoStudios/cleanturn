@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/client";
 
-type Option = { id: string; name: string };
+type Option = { id: string; name: string; hasNotes?: boolean };
 
 export default function AssignSelect({
   jobId,
@@ -59,6 +59,7 @@ export default function AssignSelect({
         {options.map((c) => (
           <option key={c.id} value={c.id}>
             {c.name}
+            {c.hasNotes ? " 📝" : ""}
           </option>
         ))}
       </select>

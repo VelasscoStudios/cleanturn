@@ -124,6 +124,7 @@ body {
   flex-wrap: wrap;
 }
 .filters select,
+.filters input[type="text"],
 .filters label {
   font-size: 13px;
   padding: 7px 10px;
@@ -145,11 +146,14 @@ body {
     display: grid;
     grid-template-columns: 1fr 1fr;
   }
-  .filters select {
+  .filters select,
+  .filters input[type="text"] {
     width: 100%;
     min-width: 0;
   }
-  .filters label {
+  .filters label,
+  .filters input[type="text"],
+  .filters .cleaner-picker {
     grid-column: 1 / -1;
   }
   .filters label input[type="month"] {
@@ -242,6 +246,19 @@ body {
 .chip.cancelled {
   background: var(--gray-bg);
   color: var(--muted);
+}
+/* Notes admin: link chip shows what a note is attached to. */
+.chip.note-general {
+  background: var(--gray-bg);
+  color: var(--muted);
+}
+.chip.note-cleaner {
+  background: var(--blue-bg);
+  color: var(--blue);
+}
+.chip.note-job {
+  background: var(--brand-light);
+  color: var(--brand);
 }
 /* Status dropdown styled to read as a chip, with a caret to hint it's
    editable. Selector matches .chip.<status> specificity so the caret
@@ -368,6 +385,48 @@ table.sched {
 }
 .sched .detail span {
   overflow-wrap: anywhere;
+}
+/* ── Linked notes surfaced on schedule rows & the cleaners modal ─────── */
+.note-badge {
+  display: inline-block;
+  background: var(--brand-light);
+  color: var(--brand);
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  margin-left: 6px;
+}
+.note-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-basis: 100%;
+}
+.note-callout {
+  border-left: 3px solid var(--brand);
+  background: var(--brand-light);
+  border-radius: 0 8px 8px 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--ink);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.note-callout .note-date {
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 11px;
+  margin-bottom: 2px;
+}
+/* Amber variants: notes linked to the assigned cleaner rather than the job. */
+.note-badge.cleaner {
+  background: var(--amber-bg);
+  color: var(--amber);
+}
+.note-callout.cleaner {
+  border-left-color: var(--amber);
+  background: var(--amber-bg);
 }
 /* Phone layout: fixed column widths total ~470px, so the table would scroll
    sideways and the expanded detail would run off-screen. Drop table layout
@@ -503,6 +562,11 @@ th {
   font-weight: 600;
   cursor: pointer;
 }
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .muted-note {
   font-size: 12px;
   color: var(--muted);
@@ -578,6 +642,27 @@ th {
   border-radius: 8px;
   line-height: 1.6;
   overflow-wrap: anywhere;
+}
+.ccard .admin-notes {
+  font-size: 13px;
+  color: var(--amber);
+  margin-top: 8px;
+  background: var(--amber-bg);
+  padding: 10px 12px;
+  border: 1px solid var(--amber);
+  border-left: 4px solid var(--amber);
+  border-radius: 8px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.ccard .admin-notes b {
+  color: var(--amber);
+}
+.ccard .admin-notes .note-item {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--amber);
+  margin-top: 4px;
 }
 .ccard .window {
   font-size: 13px;
