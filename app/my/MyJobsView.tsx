@@ -11,6 +11,7 @@ type MyJob = {
   costCents: number;
   sameDayTurnover: boolean;
   nextCheckinNote: string | null;
+  notes: { id: string; body: string; date: string | null }[];
   property: {
     nickname: string;
     address: string;
@@ -380,6 +381,16 @@ function JobCard({
         )}
         📝 {p.notes || "—"}
       </div>
+      {job.notes.length > 0 && (
+        <div className="admin-notes">
+          📌 <b>{t.adminNotes}</b>
+          {job.notes.map((n) => (
+            <div key={n.id} className="note-item">
+              {n.body}
+            </div>
+          ))}
+        </div>
+      )}
       {actionEl}
     </div>
   );

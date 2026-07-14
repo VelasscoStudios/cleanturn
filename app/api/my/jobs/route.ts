@@ -35,6 +35,10 @@ export async function GET() {
             accessCode: true,
           },
         },
+        notes: {
+          select: { id: true, body: true, date: true },
+          orderBy: { createdAt: "desc" },
+        },
       },
       orderBy: { date: "asc" },
     });
@@ -55,6 +59,7 @@ export async function GET() {
         costCents: j.costCents,
         sameDayTurnover: j.sameDayTurnover,
         nextCheckinNote: j.nextCheckinNote,
+        notes: j.notes.map((n) => ({ id: n.id, body: n.body, date: n.date })),
         property: {
           nickname: j.property.nickname,
           address: j.property.address,

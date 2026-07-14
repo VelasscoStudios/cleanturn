@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/client";
-import type { CleanerRow } from "./page";
+import type { CleanerRow, NoteRow } from "./page";
 
 type FormState = {
   name: string;
@@ -26,6 +26,7 @@ export default function CleanersClient({ cleaners }: { cleaners: CleanerRow[] })
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingActive, setEditingActive] = useState(true);
+  const [editingNotes, setEditingNotes] = useState<NoteRow[]>([]);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +36,7 @@ export default function CleanersClient({ cleaners }: { cleaners: CleanerRow[] })
   function openAdd() {
     setEditingId(null);
     setEditingActive(true);
+    setEditingNotes([]);
     setForm(emptyForm);
     setError(null);
     setRevealedPin(null);
@@ -44,6 +46,7 @@ export default function CleanersClient({ cleaners }: { cleaners: CleanerRow[] })
   function openEdit(c: CleanerRow) {
     setEditingId(c.id);
     setEditingActive(c.active);
+    setEditingNotes(c.notes);
     setForm({
       name: c.name,
       phone: c.phone,
@@ -172,6 +175,14 @@ export default function CleanersClient({ cleaners }: { cleaners: CleanerRow[] })
             <tr key={c.id} className="clickable" title="Click to edit" onClick={() => openEdit(c)}>
               <td>
                 <b>{c.name}</b>
+                {c.notes.length > 0 && (
+                  <span
+                    className="note-badge"
+                    title={`${c.notes.length} note${c.notes.length > 1 ? "s" : ""}`}
+                  >
+                    📝 {c.notes.length}
+                  </span>
+                )}
               </td>
               <td>{c.phone}</td>
               <td>Phone + PIN</td>
@@ -236,6 +247,26 @@ export default function CleanersClient({ cleaners }: { cleaners: CleanerRow[] })
               <option value="uk">Ukrainian (Українська)</option>
             </select>
           </div>
+
+          {editingId && (
+            <div className="fgroup">
+              <label>Notes about this cleaner</label>
+              {editingNotes.length === 0 ? (
+                <p className="muted-note" style={{ marginTop: 0 }}>
+                  No notes yet.
+                </p>
+              ) : (
+                <div className="note-list">
+                  {editingNotes.map((n) => (
+                    <div className="note-callout" key={n.id}>
+                      {n.date && <div className="note-date">{n.date}</div>}
+                      {n.body}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {revealedPin && (
             <div className="ical-box" style={{ display: "flex", alignItems: "center", gap: 10 }}>

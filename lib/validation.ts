@@ -210,3 +210,36 @@ export type CreateManualJobInput = z.infer<typeof createManualJobSchema>;
 // ---------------------------------------------------------------------------
 export const myJobsQuerySchema = z.object({});
 export type MyJobsQuery = z.infer<typeof myJobsQuerySchema>;
+
+// ---------------------------------------------------------------------------
+// Notes CRUD — a note links to at most one of {cleaner, job}; both null is a
+// general note. Enforced here via refine, not at the DB level.
+// ---------------------------------------------------------------------------
+const notesExclusiveLinkRefine = (data: {
+  cleanerId?: string | null;
+  jobId?: string | null;
+}) => !(data.cleanerId && data.jobId);
+const notesExclusiveLinkMessage: { message: string; path: (string | number)[] } = {
+  message: "A note can link to a cleaner or a job, not both",
+  path: ["jobId"],
+};
+
+export const createNoteSchema = z
+  .object({
+    body: z.string().trim().min(1).max(4000),
+    date: dateStrSchema.optional().nullable(),
+    cleanerId: z.string().min(1).max(64).optional().nullable(),
+    jobId: z.string().min(1).max(64).optional().nullable(),
+  })
+  .refine(notesExclusiveLinkRefine, notesExclusiveLinkMessage);
+export type CreateNoteInput = z.infer<typeof createNoteSchema>;
+
+export const updateNoteSchema = z
+  .object({
+    body: z.string().trim().min(1).max(4000).optional(),
+    date: dateStrSchema.optional().nullable(),
+    cleanerId: z.string().min(1).max(64).optional().nullable(),
+    jobId: z.string().min(1).max(64).optional().nullable(),
+  })
+  .refine(notesExclusiveLinkRefine, notesExclusiveLinkMessage);
+export type UpdateNoteInput = z.infer<typeof updateNoteSchema>;

@@ -35,6 +35,7 @@ export const STRINGS = {
     sameDayTurnover: "⚡ Same-day turnover",
     directions: "Directions:",
     access: "Access:",
+    adminNotes: "Notes from admin:",
     dateLocale: "en-US",
   },
   uk: {
@@ -59,6 +60,7 @@ export const STRINGS = {
     sameDayTurnover: "⚡ Заїзд того ж дня",
     directions: "Як дістатися:",
     access: "Доступ:",
+    adminNotes: "Нотатки від адміністратора:",
     dateLocale: "uk-UA",
   },
 } as const;
