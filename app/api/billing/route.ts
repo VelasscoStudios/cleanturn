@@ -14,14 +14,15 @@ export async function GET(req: Request) {
   const rawQuery = {
     ownerId: url.searchParams.get("ownerId") ?? undefined,
     status: url.searchParams.get("status") ?? undefined,
-    month: url.searchParams.get("month") ?? undefined,
+    from: url.searchParams.get("from") ?? undefined,
+    to: url.searchParams.get("to") ?? undefined,
   };
 
   const parsed = billingQuerySchema.safeParse(rawQuery);
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid query parameters" }, { status: 400 });
   }
-  const { ownerId, status, month } = parsed.data;
+  const { ownerId, status, from, to } = parsed.data;
 
   try {
     const properties = await prisma.property.findMany({
@@ -48,7 +49,7 @@ export async function GET(req: Request) {
       cleanerName: j.cleaner?.name ?? null,
     }));
 
-    const completed = filterCompletedJobs(billingJobs, month);
+    const completed = filterCompletedJobs(billingJobs, { from, to });
     const filtered = filterByPaidStatus(completed, status);
     const groups = groupJobsByOwner(filtered, propertiesById);
 

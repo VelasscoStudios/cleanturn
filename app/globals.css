@@ -156,7 +156,7 @@ body {
   .filters .cleaner-picker {
     grid-column: 1 / -1;
   }
-  .filters label input[type="month"] {
+  .filters label input[type="date"] {
     width: 100%;
   }
 }
@@ -838,14 +838,31 @@ tr.clickable:hover {
 }
 
 /* ---------- BILLING ---------- */
-.owner-group {
+/* Notice for completed+unpaid cleans older than the visible date range —
+   soft amber so it reads as "needs a look", not an error. */
+.older-unpaid-note {
+  background: #fff7e0;
+  border: 1px solid #ecd9a8;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+.older-unpaid-note a {
+  font-weight: 700;
+  color: inherit;
+  text-decoration: underline;
+}
+.owner-group,
+.cleaner-group {
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 12px;
   margin-bottom: 14px;
   overflow: hidden;
 }
-.owner-head {
+.owner-head,
+.cleaner-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -854,6 +871,30 @@ tr.clickable:hover {
   background: var(--gray-bg);
   border-bottom: 1px solid var(--line);
   flex-wrap: wrap;
+}
+.cleaner-head b {
+  font-size: 15px;
+}
+/* Owner sub-group nested inside a cleaner. */
+.owner-sub {
+  border-bottom: 1px solid var(--line);
+}
+.owner-sub:last-child {
+  border-bottom: none;
+}
+.owner-subhead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px 9px 22px;
+  background: #fbfbfc;
+  flex-wrap: wrap;
+}
+.owe-sub {
+  color: var(--red);
+  font-weight: 700;
+  font-size: 13px;
 }
 .owe {
   color: var(--red);
@@ -869,6 +910,36 @@ tr.clickable:hover {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+}
+/* "Pay all remaining" on the cleaner head reads as a lighter-weight shortcut
+   next to the owner-level buttons, which stay solid green. */
+.mark-all.ghost {
+  background: transparent;
+  color: var(--brand);
+  border: 1px solid var(--brand);
+}
+/* Date-range presets in the filter bar, e.g. "Last 7 days". */
+.preset {
+  background: #fff;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  padding: 6px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.preset.on {
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
+}
+/* Big, prominent amount inside the mark-paid confirm dialog. */
+.confirm-amount {
+  color: var(--red);
+  font-weight: 800;
+  font-size: 28px;
+  margin: 4px 0 16px;
 }
 .mark-one {
   background: #fff;
@@ -892,6 +963,10 @@ tr.clickable:hover {
 }
 .bill-row:last-child {
   border-bottom: none;
+}
+/* Clean rows are indented under their owner sub-header. */
+.owner-sub .bill-row {
+  padding-left: 22px;
 }
 
 @media (max-width: 640px) {

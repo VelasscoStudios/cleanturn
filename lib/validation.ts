@@ -81,21 +81,38 @@ export type SetJobPaidInput = z.infer<typeof setJobPaidSchema>;
 // ---------------------------------------------------------------------------
 // GET /api/billing
 // ---------------------------------------------------------------------------
-export const billingQuerySchema = z.object({
-  ownerId: z.string().min(1).max(64).optional(),
-  status: z.enum(["paid", "unpaid"]).optional(),
-  month: monthStrSchema.optional(),
-});
+export const billingQuerySchema = z
+  .object({
+    ownerId: z.string().min(1).max(64).optional(),
+    status: z.enum(["paid", "unpaid"]).optional(),
+    from: dateStrSchema.optional(),
+    to: dateStrSchema.optional(),
+  })
+  .refine((d) => !d.from || !d.to || d.from <= d.to, {
+    message: "from must be on or before to",
+  });
 export type BillingQuery = z.infer<typeof billingQuerySchema>;
 
 // ---------------------------------------------------------------------------
-// POST /api/billing/mark-owner-paid
+// POST /api/billing/mark-paid — bulk-mark completed cleans paid at the cleaner
+// or owner-within-cleaner level. cleanerId null targets unassigned cleans;
+// cleanerId omitted means "any cleaner". At least one scope must be present.
+// from/to optionally bound the range, both ends inclusive.
 // ---------------------------------------------------------------------------
-export const markOwnerPaidSchema = z.object({
-  ownerId: z.string().min(1).max(64),
-  month: monthStrSchema.optional(),
-});
-export type MarkOwnerPaidInput = z.infer<typeof markOwnerPaidSchema>;
+export const markPaidSchema = z
+  .object({
+    cleanerId: z.string().min(1).max(64).nullable().optional(),
+    ownerId: z.string().min(1).max(64).optional(),
+    from: dateStrSchema.optional(),
+    to: dateStrSchema.optional(),
+  })
+  .refine((d) => "cleanerId" in d || d.ownerId !== undefined, {
+    message: "cleanerId or ownerId is required",
+  })
+  .refine((d) => !d.from || !d.to || d.from <= d.to, {
+    message: "from must be on or before to",
+  });
+export type MarkPaidInput = z.infer<typeof markPaidSchema>;
 
 // ---------------------------------------------------------------------------
 // Properties CRUD
