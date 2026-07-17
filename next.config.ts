@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { PHASE_DEVELOPMENT_SERVER } from "next/constants";
 
 // Static response headers applied to every route. The Content-Security-Policy
 // is NOT set here — it carries a per-request nonce and is set in middleware.ts
@@ -26,4 +27,13 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// `next dev` gets its own output directory so a local `next build` can never
+// clobber the assets a running dev server is serving. `next build` and
+// `next start` must stay on the default `.next` — the deploy workflow rsyncs
+// that directory by name to the server.
+export default function config(phase: string): NextConfig {
+  return {
+    ...nextConfig,
+    distDir: phase === PHASE_DEVELOPMENT_SERVER ? ".next-dev" : ".next",
+  };
+}
