@@ -853,6 +853,275 @@ tr.clickable:hover {
   color: inherit;
   text-decoration: underline;
 }
+/* ── Billing header: week-pager row + status/cleaner/owner row ────────── */
+/* Min-height roughly matches the rendered two-row header so the page doesn't
+   jump while the Suspense fallback (an empty .bill-head) is showing. */
+.bill-head {
+  min-height: 92px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.bill-head-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.pager-wrap {
+  position: relative;
+}
+/* One visual pill (◀ / label / ▶) with internal 1px dividers. */
+.pager {
+  display: inline-flex;
+  align-items: stretch;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.pager button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ink);
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pager button:not(:last-child) {
+  border-right: 1px solid var(--line);
+}
+.pager button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.pager .pager-label {
+  font-weight: 700;
+}
+.pager .caret {
+  font-size: 10px;
+  color: var(--muted);
+}
+.paidline {
+  font-size: 13.5px;
+  margin-left: auto;
+}
+.paidline .paid {
+  color: var(--green);
+  font-weight: 700;
+}
+.paidline .owing {
+  color: var(--red);
+  font-weight: 700;
+}
+/* Status segmented control: Owing | Settled | All. */
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+.seg button {
+  background: none;
+  border: none;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+.seg button:not(:last-child) {
+  border-right: 1px solid var(--line);
+}
+.seg button.active {
+  background: var(--brand);
+  color: #fff;
+}
+/* Cleaner/owner selects styled to recede — borderless/transparent, caret kept. */
+.quiet-sel {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 6px 4px;
+  cursor: pointer;
+}
+/* Date-range popover, opened from the pager's label button. */
+.date-pop-backdrop {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  z-index: 45;
+}
+.date-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 276px;
+  max-width: 90vw;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.16);
+  z-index: 46;
+  padding: 12px;
+  font-size: 13px;
+}
+.date-pop .pop-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin: 6px 4px;
+}
+.date-pop .week-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+  font-size: 13px;
+  color: var(--ink);
+}
+.date-pop .week-row:hover {
+  background: var(--gray-bg);
+}
+.date-pop .week-row.active {
+  background: var(--brand-light);
+}
+.date-pop .week-badge.muted {
+  color: var(--muted);
+}
+.date-pop .week-badge.red {
+  color: var(--red);
+  font-weight: 700;
+}
+.date-pop .week-badge.green {
+  color: var(--green);
+  font-weight: 700;
+}
+.date-pop .more-row {
+  color: var(--brand);
+  font-weight: 600;
+  background: none;
+  border: none;
+  padding: 8px;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  font-size: 13px;
+}
+.date-pop .pop-divider {
+  border-top: 1px solid var(--line);
+  margin: 10px 0;
+}
+.date-pop .pop-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.date-pop .pop-chip {
+  background: var(--gray-bg);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--ink);
+}
+.date-pop .custom-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.date-pop .custom-row input[type="date"] {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+}
+.date-pop .apply-btn {
+  background: var(--brand);
+  color: #fff;
+  border: none;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.date-pop .apply-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+/* Keyboard focus visible on the new pager/seg/popover/select controls. */
+.pager button:focus-visible,
+.seg button:focus-visible,
+.date-pop button:focus-visible,
+.quiet-sel:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+/* Phone: pager + paidline stack full-width; the popover becomes a bottom
+   sheet instead of an anchored dropdown; seg buttons and quiet selects
+   split the row evenly. */
+@media (max-width: 640px) {
+  .pager-wrap {
+    width: 100%;
+  }
+  .pager {
+    width: 100%;
+  }
+  .pager .pager-label {
+    flex: 1;
+    justify-content: center;
+  }
+  .paidline {
+    width: 100%;
+    margin-left: 0;
+    text-align: center;
+  }
+  .seg {
+    width: 100%;
+  }
+  .seg button {
+    flex: 1;
+  }
+  .quiet-sel {
+    width: calc(50% - 6px);
+  }
+  .date-pop-backdrop {
+    background: rgba(15, 23, 42, 0.35);
+  }
+  .date-pop {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
+    width: auto;
+    max-width: none;
+    border-radius: 18px 18px 0 0;
+  }
+}
 .owner-group,
 .cleaner-group {
   background: #fff;
@@ -875,21 +1144,70 @@ tr.clickable:hover {
 .cleaner-head b {
   font-size: 15px;
 }
-/* Owner sub-group nested inside a cleaner. */
-.owner-sub {
-  border-bottom: 1px solid var(--line);
+/* Billing tree v2: the cleaner group is a gray bed holding one collapsible
+   white card per owner, so owner boundaries read as physical separation. */
+.cleaner-group.ocards {
+  background: #f4f5f7;
 }
-.owner-sub:last-child {
-  border-bottom: none;
+.ocards .cleaner-head {
+  background: #eceff1;
 }
-.owner-subhead {
+.owner-card {
+  background: #fff;
+  border: 1px solid #dde2e6;
+  border-radius: 10px;
+  margin: 10px 12px;
+  overflow: hidden;
+}
+.owner-card:last-child {
+  margin-bottom: 12px;
+}
+.owner-card-head {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 10px;
-  padding: 9px 14px 9px 22px;
-  background: #fbfbfc;
+  gap: 9px;
+  padding: 10px 12px;
+  cursor: pointer;
   flex-wrap: wrap;
+}
+.owner-card-head:hover {
+  background: #fafbfc;
+}
+.owner-card-head .caret {
+  color: var(--muted);
+  font-size: 11px;
+  width: 12px;
+  flex: none;
+}
+.owner-card-head .avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #e2e8ec;
+  color: #52606d;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.owner-card-head .oname b {
+  font-size: 14px;
+}
+.owner-card-head .ometa {
+  color: var(--muted);
+  font-size: 12px;
+}
+.owner-card-head .oright {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.owner-card-body {
+  border-top: 1px solid #e8ecee;
 }
 .owe-sub {
   color: var(--red);
@@ -917,22 +1235,6 @@ tr.clickable:hover {
   background: transparent;
   color: var(--brand);
   border: 1px solid var(--brand);
-}
-/* Date-range presets in the filter bar, e.g. "Last 7 days". */
-.preset {
-  background: #fff;
-  color: var(--ink);
-  border: 1px solid var(--line);
-  padding: 6px 10px;
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.preset.on {
-  background: var(--brand);
-  color: #fff;
-  border-color: var(--brand);
 }
 /* Big, prominent amount inside the mark-paid confirm dialog. */
 .confirm-amount {
@@ -964,9 +1266,39 @@ tr.clickable:hover {
 .bill-row:last-child {
   border-bottom: none;
 }
-/* Clean rows are indented under their owner sub-header. */
-.owner-sub .bill-row {
-  padding-left: 22px;
+/* Clean rows are indented under their property sub-header. */
+.owner-card .bill-row {
+  padding: 8px 12px 8px 24px;
+}
+/* Property sub-group inside an owner: nickname + clean count + subtotal,
+   then that property's cleans. */
+.prop-sub {
+  border-bottom: 1px solid var(--line);
+}
+.prop-sub:last-child {
+  border-bottom: none;
+}
+.prop-subhead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  background: #f4f6f7;
+}
+.prop-subhead .count {
+  color: var(--muted);
+  font-size: 12px;
+}
+.prop-subhead .prop-total {
+  font-variant-numeric: tabular-nums;
+}
+/* Green per-cleaner paid tally in the billing group header. */
+.paid-tally {
+  color: var(--green);
+  font-weight: 700;
+  font-size: 13px;
 }
 
 @media (max-width: 640px) {

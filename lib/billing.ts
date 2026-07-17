@@ -3,6 +3,8 @@
  * and pass plain objects in here.
  */
 
+import { addDays } from "./dates";
+
 export type BillingJob = {
   id: string;
   propertyId: string;
@@ -209,6 +211,47 @@ export function groupJobsByCleaner(
   return list;
 }
 
+/**
+ * Fold every job in a Cleaner → Owner → Property tree down to range-wide
+ * paid/unpaid/total sums and counts, e.g. for a summary strip that stays
+ * accurate regardless of any paid-status filter applied to the tree itself.
+ */
+export function rangeSummary(groups: CleanerGroup[]): {
+  totalCents: number;
+  totalCount: number;
+  paidCents: number;
+  paidCount: number;
+  unpaidCents: number;
+  unpaidCount: number;
+} {
+  let totalCents = 0;
+  let totalCount = 0;
+  let paidCents = 0;
+  let paidCount = 0;
+  let unpaidCents = 0;
+  let unpaidCount = 0;
+
+  for (const cleaner of groups) {
+    for (const owner of cleaner.owners) {
+      for (const property of owner.properties) {
+        for (const job of property.jobs) {
+          totalCents += job.costCents;
+          totalCount += 1;
+          if (job.paid) {
+            paidCents += job.costCents;
+            paidCount += 1;
+          } else {
+            unpaidCents += job.costCents;
+            unpaidCount += 1;
+          }
+        }
+      }
+    }
+  }
+
+  return { totalCents, totalCount, paidCents, paidCount, unpaidCents, unpaidCount };
+}
+
 /** Sum unpaid (completed, !paid) job costs in cents, optionally scoped to one owner's jobs. */
 export function unpaidTotalCents(jobs: BillingJob[]): number {
   return jobs
@@ -267,4 +310,28 @@ export function jobsToMarkPaid(
       return true;
     })
     .map((j) => j.id);
+}
+
+/**
+ * Tally jobs into 7-day weeks for the billing header's week-picker popover:
+ * for each entry in `weekStarts` (YYYY-MM-DD; the caller picks the week
+ * convention — billing passes Sat→Fri pay weeks), count the jobs whose date
+ * falls within that week (inclusive, plain string compare) and sum the
+ * costCents of the unpaid ones. Returned in the same order as `weekStarts`.
+ */
+export function weekTallies(
+  jobs: { date: string; paid: boolean; costCents: number }[],
+  weekStarts: string[]
+): { weekStart: string; count: number; dueCents: number }[] {
+  return weekStarts.map((weekStart) => {
+    const weekEnd = addDays(weekStart, 6);
+    let count = 0;
+    let dueCents = 0;
+    for (const job of jobs) {
+      if (job.date < weekStart || job.date > weekEnd) continue;
+      count += 1;
+      if (!job.paid) dueCents += job.costCents;
+    }
+    return { weekStart, count, dueCents };
+  });
 }

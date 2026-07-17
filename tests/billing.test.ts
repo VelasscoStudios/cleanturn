@@ -7,6 +7,8 @@ import {
   filterByPaidStatus,
   filterCleanerGroupsByPaidStatus,
   jobsToMarkPaid,
+  rangeSummary,
+  weekTallies,
   type BillingJob,
   type BillingProperty,
   type CleanerGroup,
@@ -304,6 +306,62 @@ describe("filterCleanerGroupsByPaidStatus", () => {
   });
 });
 
+describe("rangeSummary", () => {
+  it("folds mixed paid/unpaid jobs across multiple cleaners and owners into correct totals", () => {
+    const jobs = [
+      // Karen (c1): owner-1/p1 unpaid 6500, owner-1/p2 paid 9000, owner-2/p3 unpaid 5000
+      job({ id: "a", cleanerId: "c1", cleanerName: "Karen", propertyId: "p1", costCents: 6500, paid: false }),
+      job({ id: "b", cleanerId: "c1", cleanerName: "Karen", propertyId: "p2", costCents: 9000, paid: true }),
+      job({ id: "c", cleanerId: "c1", cleanerName: "Karen", propertyId: "p3", costCents: 5000, paid: false }),
+      // Bob (c2): owner-1/p1 paid 4000, owner-2/p3 unpaid 3000
+      job({ id: "d", cleanerId: "c2", cleanerName: "Bob", propertyId: "p1", costCents: 4000, paid: true }),
+      job({ id: "e", cleanerId: "c2", cleanerName: "Bob", propertyId: "p3", costCents: 3000, paid: false }),
+    ];
+    const groups = groupJobsByCleaner(jobs, properties);
+    const result = rangeSummary(groups);
+
+    // Total: 6500 + 9000 + 5000 + 4000 + 3000 = 27500
+    expect(result.totalCents).toBe(27500);
+    expect(result.totalCount).toBe(5);
+
+    // Paid: 9000 + 4000 = 13000 (jobs b and d)
+    expect(result.paidCents).toBe(13000);
+    expect(result.paidCount).toBe(2);
+
+    // Unpaid: 6500 + 5000 + 3000 = 14500 (jobs a, c, e)
+    expect(result.unpaidCents).toBe(14500);
+    expect(result.unpaidCount).toBe(3);
+  });
+
+  it("all jobs paid returns zeros for unpaid fields and paid equals total", () => {
+    const jobs = [
+      job({ id: "a", cleanerId: "c1", cleanerName: "Karen", propertyId: "p1", costCents: 5000, paid: true }),
+      job({ id: "b", cleanerId: "c1", cleanerName: "Karen", propertyId: "p2", costCents: 8000, paid: true }),
+      job({ id: "c", cleanerId: "c2", cleanerName: "Bob", propertyId: "p3", costCents: 2000, paid: true }),
+    ];
+    const groups = groupJobsByCleaner(jobs, properties);
+    const result = rangeSummary(groups);
+
+    expect(result.totalCents).toBe(15000);
+    expect(result.totalCount).toBe(3);
+    expect(result.paidCents).toBe(15000);
+    expect(result.paidCount).toBe(3);
+    expect(result.unpaidCents).toBe(0);
+    expect(result.unpaidCount).toBe(0);
+  });
+
+  it("empty groups array returns all zeros", () => {
+    const result = rangeSummary([]);
+
+    expect(result.totalCents).toBe(0);
+    expect(result.totalCount).toBe(0);
+    expect(result.paidCents).toBe(0);
+    expect(result.paidCount).toBe(0);
+    expect(result.unpaidCents).toBe(0);
+    expect(result.unpaidCount).toBe(0);
+  });
+});
+
 describe("markPaidSchema", () => {
   it("rejects an empty body (no scope)", () => {
     expect(markPaidSchema.safeParse({}).success).toBe(false);
@@ -342,5 +400,89 @@ describe("markPaidSchema", () => {
   it("rejects a badly formatted date", () => {
     const result = markPaidSchema.safeParse({ ownerId: "o1", from: "07/07/2026" });
     expect(result.success).toBe(false);
+  });
+});
+
+describe("weekTallies", () => {
+  it("tallies two weeks with mixed paid/unpaid jobs, preserving order", () => {
+    // weekTallies is week-convention-agnostic (billing passes Sat→Fri pay
+    // weeks); these tests just use arbitrary 7-day windows.
+    // Week 1: 2026-07-13 through 2026-07-19
+    // Week 2: 2026-07-20 through 2026-07-26
+    const jobs = [
+      // Week 1: 2 jobs, 1 paid (3000), 1 unpaid (2000)
+      { date: "2026-07-15", paid: true, costCents: 3000 },
+      { date: "2026-07-17", paid: false, costCents: 2000 },
+      // Week 2: 3 jobs, 1 paid (4000), 2 unpaid (1500 + 2500)
+      { date: "2026-07-21", paid: true, costCents: 4000 },
+      { date: "2026-07-22", paid: false, costCents: 1500 },
+      { date: "2026-07-24", paid: false, costCents: 2500 },
+    ];
+    const weekStarts = ["2026-07-13", "2026-07-20"];
+    const result = weekTallies(jobs, weekStarts);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({ weekStart: "2026-07-13", count: 2, dueCents: 2000 });
+    expect(result[1]).toEqual({ weekStart: "2026-07-20", count: 3, dueCents: 4000 });
+  });
+
+  it("returns count 0 and dueCents 0 for a week with no jobs", () => {
+    const jobs = [
+      { date: "2026-07-15", paid: false, costCents: 1000 },
+    ];
+    const weekStarts = ["2026-07-13", "2026-07-20"];
+    const result = weekTallies(jobs, weekStarts);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({ weekStart: "2026-07-13", count: 1, dueCents: 1000 });
+    expect(result[1]).toEqual({ weekStart: "2026-07-20", count: 0, dueCents: 0 });
+  });
+
+  it("counts jobs on the first and last day of a week, but not the day after", () => {
+    // Week of 2026-07-13 through 2026-07-19 (7 days inclusive)
+    const jobs = [
+      { date: "2026-07-13", paid: false, costCents: 1000 }, // first day of the week
+      { date: "2026-07-19", paid: false, costCents: 2000 }, // last day of the week
+      { date: "2026-07-20", paid: false, costCents: 3000 }, // first day of next week
+    ];
+    const weekStarts = ["2026-07-13"];
+    const result = weekTallies(jobs, weekStarts);
+
+    expect(result).toHaveLength(1);
+    // Should count the first (1000) + last (2000) day, NOT the day after (3000)
+    expect(result[0]).toEqual({ weekStart: "2026-07-13", count: 2, dueCents: 3000 });
+  });
+
+  it("only sums dueCents for unpaid jobs, counts all jobs regardless of paid status", () => {
+    const jobs = [
+      { date: "2026-07-15", paid: true, costCents: 5000 },
+      { date: "2026-07-16", paid: false, costCents: 3000 },
+      { date: "2026-07-17", paid: true, costCents: 2000 },
+      { date: "2026-07-18", paid: false, costCents: 1500 },
+    ];
+    const weekStarts = ["2026-07-13"];
+    const result = weekTallies(jobs, weekStarts);
+
+    expect(result[0]).toEqual({ weekStart: "2026-07-13", count: 4, dueCents: 4500 });
+  });
+
+  it("handles empty jobs list", () => {
+    const jobs: { date: string; paid: boolean; costCents: number }[] = [];
+    const weekStarts = ["2026-07-13", "2026-07-20"];
+    const result = weekTallies(jobs, weekStarts);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({ weekStart: "2026-07-13", count: 0, dueCents: 0 });
+    expect(result[1]).toEqual({ weekStart: "2026-07-20", count: 0, dueCents: 0 });
+  });
+
+  it("handles empty weekStarts list", () => {
+    const jobs = [
+      { date: "2026-07-15", paid: false, costCents: 1000 },
+    ];
+    const weekStarts: string[] = [];
+    const result = weekTallies(jobs, weekStarts);
+
+    expect(result).toHaveLength(0);
   });
 });
