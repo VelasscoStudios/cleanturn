@@ -48,6 +48,33 @@ jobs:
             echo "SSH_OPTS=-o StrictHostKeyChecking=accept-new" >> "$GITHUB_ENV"
           fi
 
+      # Prune stale releases BEFORE shipping. rsync fails on a full disk, and
+      # release.sh only prunes on a *successful* activate — so once the disk
+      # fills, deploys can never recover. Freeing space here (keeping only the
+      # live release) breaks that deadlock and also clears any partial dir left
+      # by a previously failed ship.
+      - name: Free space on droplet
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key $SSH_OPTS "$SSH_USER@$HOST" bash -s <<'REMOTE'
+          set -eu
+          CURRENT=""
+          [ -L /opt/cleanturn/current ] && CURRENT="$(readlink -f /opt/cleanturn/current || true)"
+          if [ -d /opt/cleanturn/releases ]; then
+            for d in /opt/cleanturn/releases/*/; do
+              d="${d%/}"
+              [ -e "$d" ] || continue          # no matches → literal glob, skip
+              if [ "$d" != "$CURRENT" ]; then
+                echo "pruning $d"
+                rm -rf "$d"
+              fi
+            done
+          fi
+          echo "disk after prune:"; df -h / | tail -1
+          REMOTE
+
       - name: Ship release
         env:
           HOST: ${{ secrets.DEPLOY_HOST }}
