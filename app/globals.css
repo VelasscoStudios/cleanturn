@@ -45,6 +45,64 @@ body {
 .topbar .logo span {
   color: #5eead4;
 }
+.admin-nav {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.admin-nav-link {
+  color: #cbd5e1;
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  text-decoration: none;
+}
+.admin-nav-link.active {
+  color: #5eead4;
+  background: #1e293b;
+  border-color: #334155;
+  font-weight: 600;
+}
+.nav-burger {
+  display: none;
+  background: #1e293b;
+  color: #cbd5e1;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 5px 11px;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+/* Phone: collapse the tab row into a hamburger dropdown. The topbar
+   wraps, so the open menu becomes a full-width block below it. */
+@media (max-width: 640px) {
+  .nav-burger {
+    display: block;
+    order: 5;
+    margin-left: auto;
+  }
+  .admin-nav {
+    display: none;
+  }
+  .admin-nav.open {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    order: 10;
+    gap: 2px;
+    margin-top: 6px;
+    padding-top: 8px;
+    border-top: 1px solid #1e293b;
+  }
+  .admin-nav.open .admin-nav-link {
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 15px;
+  }
+}
 .role-switch {
   margin-left: auto;
   display: flex;
