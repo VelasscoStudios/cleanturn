@@ -25,13 +25,14 @@ export default function LogoutButton() {
       onClick={handleLogout}
       disabled={loading}
       style={{
-        background: "#1e293b",
-        color: "#cbd5e1",
-        border: "1px solid #334155",
-        padding: "6px 14px",
-        borderRadius: "20px",
+        background: "var(--red-bg)",
+        color: "var(--red)",
+        border: "1px solid transparent",
+        padding: "8px 18px",
+        borderRadius: "10px",
         cursor: loading ? "default" : "pointer",
-        fontSize: "13px",
+        fontSize: "14px",
+        fontWeight: 600,
       }}
     >
       {loading ? "Logging out…" : "Log out"}
