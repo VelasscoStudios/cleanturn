@@ -116,6 +116,7 @@ export function MyJobsView({
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [lang, setLang] = useState<Lang>(initialLanguage);
+  const [tab, setTab] = useState<"jobs" | "history">("jobs");
   const t = STRINGS[lang];
 
   const load = useCallback(async () => {
@@ -187,22 +188,6 @@ export function MyJobsView({
   const errorText =
     error === "loadError" ? t.loadError : error === "actionError" ? t.actionError : error;
 
-  if (jobs === null && !error) {
-    return (
-      <div className="cleaner-wrap">
-        <div style={{ width: 375, maxWidth: "100%" }}>
-          <div className="phone">
-            <div className="phone-head">
-              <h2>{t.hi(cleanerName)}</h2>
-              <p>{t.loading}</p>
-            </div>
-            <div className="phone-body" />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const today = todayStrLocal();
   const list = jobs ?? [];
   const todays = list.filter((j) => j.date === today);
@@ -226,8 +211,37 @@ export function MyJobsView({
               <h2>{t.hi(cleanerName)}</h2>
               <LangToggle lang={lang} onChange={changeLanguage} />
             </div>
-            <p>{t.headline(todays.length, upcoming.length)}</p>
+            <p>
+              {tab === "jobs"
+                ? t.headline(todays.length, upcoming.length)
+                : t.historySubhead}
+            </p>
           </div>
+          <div className="phone-tabs">
+            <button
+              type="button"
+              className={`ptab ${tab === "jobs" ? "active" : ""}`}
+              onClick={() => setTab("jobs")}
+              aria-pressed={tab === "jobs"}
+            >
+              {t.myJobsTab}
+            </button>
+            <button
+              type="button"
+              className={`ptab ${tab === "history" ? "active" : ""}`}
+              onClick={() => setTab("history")}
+              aria-pressed={tab === "history"}
+            >
+              {t.historyTab}
+            </button>
+          </div>
+          {tab === "history" ? (
+            <HistoryView t={t} />
+          ) : jobs === null && !error ? (
+            <div className="phone-body">
+              <div className="empty-state">{t.loading}</div>
+            </div>
+          ) : (
           <div className="phone-body">
             {errorText && (
               <div className="alert" style={{ marginBottom: 12 }}>
@@ -275,6 +289,7 @@ export function MyJobsView({
               </>
             )}
           </div>
+          )}
         </div>
         <div style={{ textAlign: "center", marginTop: 14 }}>
           <a
@@ -392,6 +407,180 @@ function JobCard({
         </div>
       )}
       {actionEl}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// History tab: a cleaner's own completed cleans, browsable by month.
+// ---------------------------------------------------------------------------
+
+type HistJob = {
+  id: string;
+  date: string;
+  costCents: number;
+  arrivedAt: string | null;
+  cleanedAt: string | null;
+  property: { nickname: string; address: string; mapsUrl: string | null };
+};
+
+type HistoryResponse = {
+  month: string;
+  jobs: HistJob[];
+  summary: { count: number; totalCents: number };
+  availableMonths: string[];
+};
+
+/** Format an ISO timestamp as a local HH:MM, or null if absent/invalid. */
+function fmtTimeLocal(iso: string | null, locale: string): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat(locale, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(d);
+}
+
+/** Long month name (e.g. "July" / "Липень") for a YYYY-MM string. */
+function monthName(ym: string, locale: string): string {
+  const [y, m] = ym.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, 1, 12, 0, 0));
+  return new Intl.DateTimeFormat(locale, { timeZone: "UTC", month: "long" }).format(dt);
+}
+
+function HistoryView({ t }: { t: Strings }) {
+  const [month, setMonth] = useState<string>(() => todayStrLocal().slice(0, 7));
+  const [data, setData] = useState<HistoryResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  const load = useCallback(async (m: string) => {
+    setLoading(true);
+    try {
+      const res = await apiFetch<HistoryResponse>(`/api/my/history?month=${m}`);
+      setData(res);
+      setError(false);
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load(month);
+  }, [load, month]);
+
+  const [yy, mm] = month.split("-").map(Number);
+
+  // Offer every year the cleaner actually has history in, plus the selected and
+  // current years (so the picker is never empty before data loads).
+  const currentYear = Number(todayStrLocal().slice(0, 4));
+  const years = Array.from(
+    new Set<number>([
+      currentYear,
+      yy,
+      ...(data?.availableMonths ?? []).map((ym) => Number(ym.slice(0, 4))),
+    ])
+  ).sort((a, b) => b - a);
+
+  const setYear = (y: number) => setMonth(`${y}-${String(mm).padStart(2, "0")}`);
+  const setMonthNum = (m: number) => setMonth(`${yy}-${String(m).padStart(2, "0")}`);
+  const step = (delta: number) => {
+    const dt = new Date(Date.UTC(yy, mm - 1 + delta, 1, 12, 0, 0));
+    setMonth(`${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}`);
+  };
+
+  return (
+    <div className="phone-body">
+      <div className="monthbar">
+        <button type="button" className="mstep" onClick={() => step(-1)} aria-label={t.prevMonth}>
+          ‹
+        </button>
+        <div className="msel">
+          <div className="sel">
+            <select
+              aria-label={t.monthLabel}
+              value={mm}
+              onChange={(e) => setMonthNum(Number(e.target.value))}
+            >
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <option key={m} value={m}>
+                  {monthName(`${yy}-${String(m).padStart(2, "0")}`, t.dateLocale)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="sel">
+            <select
+              aria-label={t.yearLabel}
+              value={yy}
+              onChange={(e) => setYear(Number(e.target.value))}
+            >
+              {years.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <button type="button" className="mstep" onClick={() => step(1)} aria-label={t.nextMonth}>
+          ›
+        </button>
+      </div>
+
+      {error && (
+        <div className="alert" style={{ marginBottom: 12 }}>
+          {t.loadError}
+        </div>
+      )}
+
+      {!error && (
+        <>
+          <div className="summary">
+            <div className="stat">
+              <div className="k">{t.cleansLabel}</div>
+              <div className="v">{loading ? "…" : data?.summary.count ?? 0}</div>
+            </div>
+            <div className="stat">
+              <div className="k">{t.totalLabel}</div>
+              <div className="v money">
+                {loading ? "…" : formatCents(data?.summary.totalCents ?? 0)}
+              </div>
+            </div>
+          </div>
+
+          {!loading && (data?.jobs.length ?? 0) === 0 && (
+            <div className="empty-state">{t.historyEmpty}</div>
+          )}
+
+          {(data?.jobs ?? []).map((j) => (
+            <HistoryCard key={j.id} job={j} t={t} />
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+function HistoryCard({ job, t }: { job: HistJob; t: Strings }) {
+  const arrived = fmtTimeLocal(job.arrivedAt, t.dateLocale);
+  const done = fmtTimeLocal(job.cleanedAt, t.dateLocale);
+  return (
+    <div className="hcard">
+      <div className="hcard-top">
+        <span className="hprop">{job.property.nickname}</span>
+        <span className="hcost">{formatCents(job.costCents)}</span>
+      </div>
+      <div className="hdate">{fmtDayLocal(job.date, t.dateLocale)}</div>
+      {arrived && done && (
+        <div className="hmeta">
+          {t.arrivedLabel} {arrived} · {t.doneLabel} {done}
+        </div>
+      )}
     </div>
   );
 }
