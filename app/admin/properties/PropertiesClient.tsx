@@ -5,6 +5,88 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/client";
 import type { PropertyRow, OwnerOption } from "./page";
 
+type HeldCancellation = {
+  bookingId: string;
+  checkinDate: string;
+  checkoutDate: string;
+  cleanerName: string | null;
+};
+
+/**
+ * Shown under a property whose sync is holding cancellations (circuit
+ * breaker). Lists the bookings the live feed no longer has and lets the admin
+ * apply those cancellations after checking them in Airbnb.
+ */
+function ReviewCancellations({ propertyId, onDone }: { propertyId: string; onDone: () => void }) {
+  const [items, setItems] = useState<HeldCancellation[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function load() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await apiFetch<{ cancellations: HeldCancellation[] }>(
+        `/api/properties/${propertyId}/cancellations`
+      );
+      setItems(r.cancellations);
+      if (r.cancellations.length === 0) setMsg("Nothing to cancel any more — next sync will clear this.");
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Failed to load");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function apply() {
+    if (!items || items.length === 0) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await apiFetch<{ cancelled: number; created: number }>(
+        `/api/properties/${propertyId}/cancellations`,
+        { method: "POST", body: { bookingIds: items.map((i) => i.bookingId) } }
+      );
+      setItems(null);
+      setMsg(`Cancelled ${r.cancelled}${r.created ? `, added ${r.created} new` : ""}.`);
+      onDone();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Failed to apply");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 6, fontSize: 13 }}>
+      {items && items.length > 0 ? (
+        <>
+          <div>No longer in the Airbnb calendar:</div>
+          <ul style={{ margin: "4px 0 6px 18px", padding: 0 }}>
+            {items.map((i) => (
+              <li key={i.bookingId}>
+                {i.checkinDate} → {i.checkoutDate}
+                {i.cleanerName ? ` (${i.cleanerName})` : ""}
+              </li>
+            ))}
+          </ul>
+          <button type="button" disabled={busy} onClick={apply}>
+            {busy ? "Applying…" : `Cancel these ${items.length}`}
+          </button>{" "}
+          <button type="button" disabled={busy} onClick={() => setItems(null)}>
+            Not now
+          </button>
+        </>
+      ) : (
+        <button type="button" disabled={busy} onClick={load}>
+          {busy ? "Checking feed…" : "Review cancellations"}
+        </button>
+      )}
+      {msg && <div style={{ marginTop: 4 }}>{msg}</div>}
+    </div>
+  );
+}
+
 function formatCad(cents: number): string {
   const dollars = cents / 100;
   return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
@@ -231,9 +313,14 @@ export default function PropertiesClient({
                 {p.syncStatus === "ok" ? (
                   <span className="ok">● Synced {timeAgo(p.lastSyncAt)}</span>
                 ) : p.syncStatus === "error" ? (
-                  <span className="err">
-                    ● {p.syncError ? p.syncError : "Feed error — check iCal URL"}
-                  </span>
+                  <>
+                    <span className="err">
+                      ● {p.syncError ? p.syncError : "Feed error — check iCal URL"}
+                    </span>
+                    {p.syncError?.includes("holding cancellations") && (
+                      <ReviewCancellations propertyId={p.id} onDone={() => router.refresh()} />
+                    )}
+                  </>
                 ) : (
                   <span style={{ color: "var(--muted)", fontSize: 12 }}>● Pending first sync</span>
                 )}

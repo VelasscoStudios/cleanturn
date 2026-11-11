@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseIcs } from "../lib/ical";
+import { parseIcs, countFeedEvents, isCompleteCalendar } from "../lib/ical";
 import {
   reconcile,
   computeSameDay,
@@ -436,5 +436,44 @@ describe("createCoalescer", () => {
     const coalesce = createCoalescer<number>();
     await expect(coalesce(() => Promise.reject(new Error("boom")))).rejects.toThrow("boom");
     expect(await coalesce(async () => 7)).toBe(7);
+  });
+});
+
+describe("countFeedEvents / isCompleteCalendar (breaker health signal)", () => {
+  it("counts 'Not available' blocks, so a feed with no reservations is not 'empty'", () => {
+    const text = icsWith([
+      { uid: "blk", start: "2027-08-07", end: "2027-11-12", summary: "Airbnb (Not available)" },
+    ]);
+    expect(parseIcs(text)).toHaveLength(0);
+    expect(countFeedEvents(text)).toBe(1);
+    expect(isCompleteCalendar(text)).toBe(true);
+  });
+
+  it("an HTML error page has 0 events and is not a calendar", () => {
+    const html = "<!doctype html><html><body>oops</body></html>";
+    expect(countFeedEvents(html)).toBe(0);
+    expect(isCompleteCalendar(html)).toBe(false);
+  });
+
+  it("a truncated body is not a complete calendar", () => {
+    const text = icsWith([{ uid: "u1", start: "2026-07-10", end: "2026-07-12", summary: "Reserved" }]);
+    expect(isCompleteCalendar(text.slice(0, text.length - 20))).toBe(false);
+  });
+
+  it("the Bowness case: last reservation cancelled, only blocks left -> breaker allows it", () => {
+    const existing: ExistingBooking[] = [
+      {
+        id: "b1",
+        icalUid: "gone",
+        checkinDate: "2026-07-20",
+        checkoutDate: "2026-07-23",
+        status: "active",
+        job: { id: "j1", status: "assigned", cleanerId: null },
+      },
+    ];
+    const text = icsWith([{ uid: "blk", start: "2027-08-07", end: "2027-11-12", summary: "Airbnb (Not available)" }]);
+    const { cancels } = reconcile(existing, parseIcs(text), TODAY);
+    expect(cancels).toHaveLength(1);
+    expect(feedSafetyError(existing, countFeedEvents(text), cancels.length, TODAY)).toBeNull();
   });
 });

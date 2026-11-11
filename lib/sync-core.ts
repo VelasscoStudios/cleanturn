@@ -153,14 +153,23 @@ export function reconcile(
  * (HTTP 200 with an error page, truncated body, changed SUMMARY wording) is
  * indistinguishable from "everything got cancelled" — and once applied,
  * cancellations are permanent (reconcile never reinstates a cancelled UID).
- * Refuse to reconcile when the feed looks broken; the caller records it as a
- * feed error so the existing 6h admin alert path picks it up.
+ * When the feed looks broken the caller records it as a feed error so the
+ * existing 6h admin alert path picks it up.
+ *
+ * The breaker only ever holds back CANCELLATIONS: the caller still applies
+ * creates and moves (both safe and reversible), so a tripped property keeps
+ * picking up new bookings. Held cancels are applied by an admin from the
+ * Properties page once they've confirmed them in Airbnb.
+ *
+ * `feedEventCount` is the number of VEVENTs of any kind in the feed (see
+ * countFeedEvents), NOT the number of reservations — a healthy feed whose
+ * last reservation was cancelled still has its "Not available" blocks.
  *
  * Returns a human-readable reason, or null when the reconcile looks safe.
  */
 export function feedSafetyError(
   existingBookings: ExistingBooking[],
-  parsedEventCount: number,
+  feedEventCount: number,
   cancelCount: number,
   todayStr: string
 ): string | null {
@@ -174,15 +183,15 @@ export function feedSafetyError(
 
   if (futureActive === 0) return null;
 
-  if (parsedEventCount === 0) {
-    return `feed returned 0 events while ${futureActive} future booking(s) are active; refusing to reconcile`;
+  if (feedEventCount === 0) {
+    return `feed returned 0 events while ${futureActive} future booking(s) are active; holding cancellations`;
   }
 
   // Guests cancel one at a time; a single run wiping out most of a calendar
   // is far more likely a broken feed than a mass exodus. Threshold of 3 keeps
   // small properties (1-2 future bookings) able to cancel legitimately.
   if (cancelCount >= 3 && cancelCount * 2 > futureActive) {
-    return `feed would cancel ${cancelCount} of ${futureActive} future booking(s) in one run; refusing to reconcile`;
+    return `feed would cancel ${cancelCount} of ${futureActive} future booking(s) in one run; holding cancellations`;
   }
 
   return null;

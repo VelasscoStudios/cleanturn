@@ -43,6 +43,28 @@ function summaryToString(summary: unknown): string | null {
 }
 
 /**
+ * Health signal for the sync circuit breaker: how many VEVENTs of ANY kind
+ * the feed carries ("Reserved" and "Airbnb (Not available)" blocks alike).
+ * A real Airbnb export whose last reservation was cancelled still carries
+ * its blocked ranges, so "0 reservations" alone does not mean "broken feed";
+ * an error page or truncated body parses to 0 VEVENTs.
+ */
+/** True when the body is a whole iCalendar document (not an error page or truncated body). */
+export function isCompleteCalendar(icsText: string): boolean {
+  return /^\s*BEGIN:VCALENDAR/i.test(icsText) && /END:VCALENDAR\s*$/i.test(icsText);
+}
+
+export function countFeedEvents(icsText: string): number {
+  if (!/BEGIN:VCALENDAR/i.test(icsText)) return 0;
+  const parsed = parseICS(icsText);
+  let n = 0;
+  for (const key of Object.keys(parsed)) {
+    if (parsed[key]?.type === "VEVENT") n++;
+  }
+  return n;
+}
+
+/**
  * Parse raw ICS text and return only real Airbnb reservation events
  * (SUMMARY "Reserved"), ignoring "Airbnb (Not available)" blocks and any
  * non-VEVENT components.

@@ -1,6 +1,6 @@
 import { prisma } from "./db";
 import { todayStr, addDays } from "./dates";
-import { parseIcs, type ParsedBookingEvent } from "./ical";
+import { parseIcs, countFeedEvents, isCompleteCalendar } from "./ical";
 import {
   reconcile,
   computeSameDay,
@@ -456,6 +456,126 @@ async function maybeNotifyUnassignedDigest(today: string): Promise<void> {
   }
 }
 
+type PropertyForSync = {
+  id: string;
+  nickname: string;
+  icalUrl: string;
+  cleanCostCents: number;
+};
+
+export type PropertySyncResult = {
+  created: number;
+  moved: number;
+  cancelled: number;
+  /** Cancellations the circuit breaker held back (not applied). */
+  held: number;
+  guardError: string | null;
+};
+
+/**
+ * Sync ONE property against its feed. Creates and moves are always applied.
+ * Cancellations are applied unless the circuit breaker trips, in which case
+ * they are held and the property is marked `error` with the reason — except
+ * those whose booking ids are in `approvedCancelBookingIds` (an admin
+ * reviewed them on the Properties page and confirmed them in Airbnb).
+ *
+ * Throws on fetch/parse failures; the caller records those.
+ */
+export async function syncProperty(
+  property: PropertyForSync,
+  today: string,
+  opts: { approvedCancelBookingIds?: ReadonlySet<string> } = {}
+): Promise<PropertySyncResult> {
+  const icsText = await getIcsTextForProperty(property.icalUrl);
+  const parsedEvents = parseIcs(icsText);
+  const existingBookings = await loadExistingBookingsForProperty(property.id);
+  const { creates, moves, cancels } = reconcile(existingBookings, parsedEvents, today);
+
+  // Circuit breaker: an empty/gutted feed is indistinguishable from a mass
+  // cancellation, and applied cancels are permanent. Only the cancels are
+  // held — new bookings and date moves still go through.
+  const guardError = feedSafetyError(existingBookings, countFeedEvents(icsText), cancels.length, today);
+
+  const approved = opts.approvedCancelBookingIds;
+  if (guardError && approved && approved.size > 0 && !isCompleteCalendar(icsText)) {
+    throw new Error("feed is not a complete calendar right now; refusing to apply cancellations — try again later");
+  }
+
+  const toCancel = !guardError ? cancels : cancels.filter((c) => approved?.has(c.bookingId));
+  const held = cancels.length - toCancel.length;
+
+  const created = await applyCreates(property.id, property.cleanCostCents, creates);
+  const moved = await applyMoves(moves);
+  const cancelled = await applyCancels(toCancel);
+
+  await recomputeSameDayForProperty(property.id, today);
+
+  if (held > 0) {
+    // lastSyncAt deliberately NOT bumped: it's the "last healthy" marker the
+    // 6h feed-error alert measures from.
+    await prisma.property.update({
+      where: { id: property.id },
+      data: { syncStatus: "error", syncError: guardError },
+    });
+  } else {
+    await prisma.property.update({
+      where: { id: property.id },
+      data: { syncStatus: "ok", syncError: null, lastSyncAt: new Date() },
+    });
+  }
+
+  return { created, moved, cancelled, held, guardError: held > 0 ? guardError : null };
+}
+
+export type HeldCancellation = {
+  bookingId: string;
+  checkinDate: string;
+  checkoutDate: string;
+  cleanerName: string | null;
+};
+
+/**
+ * Dry run for the admin review dialog: which future bookings the current feed
+ * would cancel for this property. Read-only.
+ */
+export async function previewCancellations(propertyId: string): Promise<HeldCancellation[]> {
+  const property = await prisma.property.findUnique({ where: { id: propertyId } });
+  if (!property) throw new Error("Property not found");
+
+  const icsText = await getIcsTextForProperty(property.icalUrl);
+  const existing = await loadExistingBookingsForProperty(property.id);
+  const { cancels } = reconcile(existing, parseIcs(icsText), todayStr());
+  if (cancels.length === 0) return [];
+
+  const rows = await prisma.booking.findMany({
+    where: { id: { in: cancels.map((c) => c.bookingId) } },
+    include: { job: { include: { cleaner: { select: { name: true } } } } },
+    orderBy: { checkoutDate: "asc" },
+  });
+  return rows.map((b) => ({
+    bookingId: b.id,
+    checkinDate: b.checkinDate,
+    checkoutDate: b.checkoutDate,
+    cleanerName: b.job?.cleaner?.name ?? null,
+  }));
+}
+
+/**
+ * Admin-confirmed apply: re-sync the property, applying the held
+ * cancellations the admin reviewed. A booking that has since reappeared in
+ * the feed is simply not cancelled (it's no longer in reconcile's cancels).
+ */
+export async function applyApprovedCancellations(
+  propertyId: string,
+  bookingIds: string[]
+): Promise<PropertySyncResult> {
+  return withSyncLock(async () => {
+    const property = await prisma.property.findUnique({ where: { id: propertyId } });
+    if (!property) throw new Error("Property not found");
+    return syncProperty(property, todayStr(), { approvedCancelBookingIds: new Set(bookingIds) });
+  });
+}
+
 /**
  * runSync(): iterate active properties sequentially, reconcile bookings
  * against the freshly parsed calendar feed, apply changes via prisma,
@@ -475,33 +595,14 @@ export async function runSync(): Promise<SyncCounts> {
 
   for (const property of properties) {
     try {
-      const icsText = await getIcsTextForProperty(property.icalUrl);
-      const parsedEvents: ParsedBookingEvent[] = parseIcs(icsText);
-
-      const existingBookings = await loadExistingBookingsForProperty(property.id);
-
-      const { creates, moves, cancels } = reconcile(existingBookings, parsedEvents, today);
-
-      // Circuit breaker: an empty/gutted feed is indistinguishable from a
-      // mass cancellation, and applied cancels are permanent. Treat it as a
-      // feed error (recorded below, 6h admin alert) instead of applying.
-      const guardError = feedSafetyError(existingBookings, parsedEvents.length, cancels.length, today);
-      if (guardError) throw new Error(guardError);
-
-      counts.created += await applyCreates(property.id, property.cleanCostCents, creates);
-      counts.moved += await applyMoves(moves);
-      counts.cancelled += await applyCancels(cancels);
-
-      await recomputeSameDayForProperty(property.id, today);
-
-      await prisma.property.update({
-        where: { id: property.id },
-        data: {
-          syncStatus: "ok",
-          syncError: null,
-          lastSyncAt: new Date(),
-        },
-      });
+      const r = await syncProperty(property, today);
+      counts.created += r.created;
+      counts.moved += r.moved;
+      counts.cancelled += r.cancelled;
+      if (r.guardError) {
+        counts.errors += 1;
+        console.error(`[sync] property ${property.id} (${property.nickname}) held ${r.held} cancel(s):`, r.guardError);
+      }
     } catch (err) {
       counts.errors += 1;
       const message = err instanceof Error ? err.message : String(err);
@@ -554,7 +655,19 @@ export async function runSync(): Promise<SyncCounts> {
 // this must become a cross-process lease instead.
 const globalForSync = globalThis as unknown as {
   cleanturnSyncCoalescer?: (fn: () => Promise<SyncCounts>) => Promise<SyncCounts>;
+  cleanturnSyncLock?: Promise<unknown>;
 };
+
+/**
+ * Serialise writers to bookings: the full sync and an admin's single-property
+ * apply must never interleave reconciles over the same rows.
+ */
+function withSyncLock<T>(fn: () => Promise<T>): Promise<T> {
+  const prev = globalForSync.cleanturnSyncLock ?? Promise.resolve();
+  const run = prev.catch(() => undefined).then(fn);
+  globalForSync.cleanturnSyncLock = run.catch(() => undefined);
+  return run;
+}
 
 /**
  * The only entry point routes should call. While a sync is running, further
@@ -564,5 +677,5 @@ const globalForSync = globalThis as unknown as {
  */
 export function runSyncExclusive(): Promise<SyncCounts> {
   const coalesce = (globalForSync.cleanturnSyncCoalescer ??= createCoalescer<SyncCounts>());
-  return coalesce(runSync);
+  return coalesce(() => withSyncLock(runSync));
 }
