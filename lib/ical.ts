@@ -43,25 +43,25 @@ function summaryToString(summary: unknown): string | null {
 }
 
 /**
- * Health signal for the sync circuit breaker: how many VEVENTs of ANY kind
- * the feed carries ("Reserved" and "Airbnb (Not available)" blocks alike).
- * A real Airbnb export whose last reservation was cancelled still carries
- * its blocked ranges, so "0 reservations" alone does not mean "broken feed";
- * an error page or truncated body parses to 0 VEVENTs.
+ * Sync circuit-breaker signal: true when the body is a whole iCalendar
+ * document. An HTTP-200 error page or a cut-off download is not — and must
+ * never be read as "every booking was cancelled". A complete calendar with no
+ * reservations (only "Not available" blocks, or nothing) is valid.
  */
-/** True when the body is a whole iCalendar document (not an error page or truncated body). */
 export function isCompleteCalendar(icsText: string): boolean {
   return /^\s*BEGIN:VCALENDAR/i.test(icsText) && /END:VCALENDAR\s*$/i.test(icsText);
 }
 
-export function countFeedEvents(icsText: string): number {
-  if (!/BEGIN:VCALENDAR/i.test(icsText)) return 0;
+/** UIDs of every VEVENT in the feed, whatever its SUMMARY. */
+export function feedUids(icsText: string): Set<string> {
+  const uids = new Set<string>();
+  if (!/BEGIN:VCALENDAR/i.test(icsText)) return uids;
   const parsed = parseICS(icsText);
-  let n = 0;
   for (const key of Object.keys(parsed)) {
-    if (parsed[key]?.type === "VEVENT") n++;
+    const c = parsed[key];
+    if (c?.type === "VEVENT" && c.uid) uids.add(String(c.uid));
   }
-  return n;
+  return uids;
 }
 
 /**

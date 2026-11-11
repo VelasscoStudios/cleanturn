@@ -165,7 +165,7 @@ describe("prod replay: Bowness / Killarney (last reservation cancelled, feed onl
 });
 
 describe("prod replay: 1836 17 Ave NW Unit 2 (4 of 6 future stays gone in one run)", () => {
-  it("holds the 4 cancels (status error, bookings untouched), then the admin applies them via the review endpoint", async () => {
+  it("before: 'feed would cancel 4 of 6 ... refusing to reconcile'. now: gone from a complete calendar = cancelled, all 4 apply", async () => {
     const prop = await makeProperty("1836 17 Ave NW - Unit 2 (Capitol Hill)");
     const cleaner = await prisma.cleaner.create({ data: { name: "OKSANA", phone: `+1${Date.now()}`, pinHash: "x" } });
     const gone = [
@@ -185,72 +185,23 @@ describe("prod replay: 1836 17 Ave NW Unit 2 (4 of 6 future stays gone in one ru
       ])
     );
 
-    // The exact prod symptom: breaker trips on 4 of 6.
-    await runSync();
-    let s = await state(prop.id);
-    expect(s.p.syncStatus).toBe("error");
-    expect(s.p.syncError).toMatch(/feed would cancel 4 of 6 future booking\(s\) in one run; holding cancellations/);
-    expect(s.p.lastSyncAt?.toISOString()).toBe("2026-10-31T00:00:00.000Z"); // 6h alert clock not reset
-    for (const b of gone) expect(s.by[b.icalUid].status).toBe("active");
+    const counts = await runSync();
 
-    // Admin review: GET lists exactly the 4 vanished stays.
-    const preview = await (await GET(new Request("http://localhost/x"), params(prop.id))).json();
-    expect(preview.cancellations.map((c: { checkoutDate: string }) => c.checkoutDate)).toEqual([
-      "2026-12-13",
-      "2026-12-20",
-      "2026-12-29",
-      "2026-12-30",
-    ]);
-    expect(preview.cancellations[0].cleanerName).toBe("OKSANA");
-
-    // Admin confirms.
-    const res = await POST(
-      new Request("http://localhost/x", {
-        method: "POST",
-        headers: { "content-type": "application/json", "X-Requested-With": "fetch" },
-        body: JSON.stringify({ bookingIds: preview.cancellations.map((c: { bookingId: string }) => c.bookingId) }),
-      }),
-      params(prop.id)
-    );
-    expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ cancelled: 4, held: 0 });
-
-    s = await state(prop.id);
+    const s = await state(prop.id);
     expect(s.p.syncStatus).toBe("ok");
+    expect(s.p.syncError).toBeNull();
+    expect(counts).toMatchObject({ cancelled: 4, errors: 0 });
     for (const b of gone) expect(s.by[b.icalUid]).toMatchObject({ status: "cancelled", job: "cancelled" });
     expect(s.by["dfc0305dacb28@airbnb.com"].status).toBe("active");
     expect(s.by["15a02369b6980@airbnb.com"].status).toBe("active");
 
-    // And the next scheduled sync stays green.
-    await runSync();
-    expect((await state(prop.id)).p.syncStatus).toBe("ok");
-  });
-
-  it("approving only some ids keeps the rest held", async () => {
-    const prop = await makeProperty("partial");
-    const a = await addBooking(prop.id, "a@airbnb.com", "2026-12-01", "2026-12-03");
-    await addBooking(prop.id, "b@airbnb.com", "2026-12-05", "2026-12-07");
-    await addBooking(prop.id, "c@airbnb.com", "2026-12-09", "2026-12-11");
-    feeds.set(prop.icalUrl, ics([blocked("blk@airbnb.com", "2027-08-01", "2027-11-01")]));
-
-    const res = await POST(
-      new Request("http://localhost/x", {
-        method: "POST",
-        headers: { "content-type": "application/json", "X-Requested-With": "fetch" },
-        body: JSON.stringify({ bookingIds: [a.id] }),
-      }),
-      params(prop.id)
-    );
-    expect(await res.json()).toMatchObject({ cancelled: 1, held: 2 });
-    const s = await state(prop.id);
-    expect(s.p.syncStatus).toBe("error");
-    expect(s.by["a@airbnb.com"].status).toBe("cancelled");
-    expect(s.by["b@airbnb.com"].status).toBe("active");
+    // Next scheduled sync stays green and changes nothing.
+    expect(await runSync()).toMatchObject({ created: 0, moved: 0, cancelled: 0, errors: 0 });
   });
 });
 
 describe("prod replay: 4B, 412 12 AVE NE (3 of 3 gone AND 3 new reservations)", () => {
-  it("before: the breaker also blocked the new bookings (Nov 16 checkout had no job). now: new bookings are created while cancels are held", async () => {
+  it("before: nothing applied (Nov 16 checkout had no job). now: 3 new bookings created and the 3 July stays cancelled", async () => {
     const prop = await makeProperty("4B, 412 12 AVE NE");
     await addBooking(prop.id, "3c9b95de48ac0@airbnb.com", "2027-07-07", "2027-07-11");
     await addBooking(prop.id, "32d28951cc28e@airbnb.com", "2027-07-12", "2027-07-14");
@@ -268,14 +219,56 @@ describe("prod replay: 4B, 412 12 AVE NE (3 of 3 gone AND 3 new reservations)", 
     const counts = await runSync();
 
     const s = await state(prop.id);
-    expect(s.p.syncStatus).toBe("error");
-    expect(s.p.syncError).toMatch(/feed would cancel 3 of 3/);
-    expect(counts.created).toBe(3);
+    expect(s.p.syncStatus).toBe("ok");
+    expect(counts).toMatchObject({ created: 3, cancelled: 3, errors: 0 });
     expect(s.by["f71e558345e0b@airbnb.com"]).toMatchObject({ status: "active", job: "assigned", date: "2026-11-16" });
     expect(s.by["68ed04b0719bb@airbnb.com"]).toMatchObject({ status: "active", date: "2027-04-07" });
-    // The July stays are held, not cancelled.
-    expect(s.by["3c9b95de48ac0@airbnb.com"].status).toBe("active");
-    expect(s.by["c8305142a5cd0@airbnb.com"].status).toBe("active");
+    for (const uid of ["3c9b95de48ac0@airbnb.com", "32d28951cc28e@airbnb.com", "c8305142a5cd0@airbnb.com"]) {
+      expect(s.by[uid]).toMatchObject({ status: "cancelled", job: "cancelled" });
+    }
+  });
+});
+
+describe("Airbnb renames 'Reserved' (UIDs still in the feed)", () => {
+  it("holds those cancels; admin can review and approve some, the rest stay held", async () => {
+    const prop = await makeProperty("renamed");
+    const a = await addBooking(prop.id, "a@airbnb.com", "2026-12-01", "2026-12-03");
+    await addBooking(prop.id, "b@airbnb.com", "2026-12-05", "2026-12-07");
+    await addBooking(prop.id, "c@airbnb.com", "2026-12-09", "2026-12-11");
+    feeds.set(
+      prop.icalUrl,
+      ics([
+        { uid: "a@airbnb.com", start: "2026-12-01", end: "2026-12-03", summary: "Booked" },
+        { uid: "b@airbnb.com", start: "2026-12-05", end: "2026-12-07", summary: "Booked" },
+        { uid: "c@airbnb.com", start: "2026-12-09", end: "2026-12-11", summary: "Booked" },
+        { uid: "new@airbnb.com", start: "2026-12-20", end: "2026-12-22" },
+      ])
+    );
+
+    await runSync();
+    let s = await state(prop.id);
+    expect(s.p.syncStatus).toBe("error");
+    expect(s.p.syncError).toMatch(/3 booking\(s\) still in the feed.*holding cancellations/);
+    expect(s.p.lastSyncAt?.toISOString()).toBe("2026-10-31T00:00:00.000Z"); // 6h alert clock not reset
+    for (const u of ["a", "b", "c"]) expect(s.by[`${u}@airbnb.com`].status).toBe("active");
+    expect(s.by["new@airbnb.com"].status).toBe("active"); // creates still applied
+
+    const preview = await (await GET(new Request("http://localhost/x"), params(prop.id))).json();
+    expect(preview.cancellations).toHaveLength(3);
+
+    const res = await POST(
+      new Request("http://localhost/x", {
+        method: "POST",
+        headers: { "content-type": "application/json", "X-Requested-With": "fetch" },
+        body: JSON.stringify({ bookingIds: [a.id] }),
+      }),
+      params(prop.id)
+    );
+    expect(await res.json()).toMatchObject({ cancelled: 1, held: 2 });
+    s = await state(prop.id);
+    expect(s.p.syncStatus).toBe("error");
+    expect(s.by["a@airbnb.com"].status).toBe("cancelled");
+    expect(s.by["b@airbnb.com"].status).toBe("active");
   });
 });
 
@@ -289,7 +282,7 @@ describe("the breaker still protects against genuinely broken feeds", () => {
     await runSync();
     let s = await state(prop.id);
     expect(s.p.syncStatus).toBe("error");
-    expect(s.p.syncError).toMatch(/0 events/);
+    expect(s.p.syncError).toMatch(/not a complete calendar/);
     expect(s.by["x1@airbnb.com"].status).toBe("active");
     expect(s.by["x2@airbnb.com"].status).toBe("active");
 

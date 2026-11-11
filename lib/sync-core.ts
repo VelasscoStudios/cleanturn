@@ -149,30 +149,29 @@ export function reconcile(
 
 /**
  * Circuit breaker for broken feeds. A cancellation is inferred from a UID
- * *disappearing* from the feed, so a feed that comes back empty or gutted
- * (HTTP 200 with an error page, truncated body, changed SUMMARY wording) is
- * indistinguishable from "everything got cancelled" — and once applied,
- * cancellations are permanent (reconcile never reinstates a cancelled UID).
- * When the feed looks broken the caller records it as a feed error so the
- * existing 6h admin alert path picks it up.
+ * *disappearing* from the feed, and once applied it is permanent (reconcile
+ * never reinstates a cancelled UID). Policy: if a booking is gone from a
+ * COMPLETE Airbnb calendar, it was cancelled — apply it, however many go at
+ * once. Cancels are held only when the feed itself is suspect:
  *
- * The breaker only ever holds back CANCELLATIONS: the caller still applies
- * creates and moves (both safe and reversible), so a tripped property keeps
- * picking up new bookings. Held cancels are applied by an admin from the
- * Properties page once they've confirmed them in Airbnb.
+ *  - the body is not a complete calendar (HTTP 200 error page, cut-off
+ *    download): checked here;
+ *  - the booking's UID is still in the feed under a different SUMMARY (Airbnb
+ *    renamed "Reserved"): checked by the caller per booking (heldCancels).
  *
- * `feedEventCount` is the number of VEVENTs of any kind in the feed (see
- * countFeedEvents), NOT the number of reservations — a healthy feed whose
- * last reservation was cancelled still has its "Not available" blocks.
+ * The caller still applies creates and moves when cancels are held. Held
+ * cancels can be applied by an admin from the Properties page.
  *
- * Returns a human-readable reason, or null when the reconcile looks safe.
+ * Returns a human-readable reason, or null when the cancels are safe.
  */
 export function feedSafetyError(
   existingBookings: ExistingBooking[],
-  feedEventCount: number,
+  feedIsComplete: boolean,
   cancelCount: number,
   todayStr: string
 ): string | null {
+  if (feedIsComplete || cancelCount === 0) return null;
+
   const futureActive = existingBookings.filter(
     (b) =>
       b.status === "active" &&
@@ -180,21 +179,24 @@ export function feedSafetyError(
       b.job !== null &&
       b.job.status !== "cancelled"
   ).length;
-
   if (futureActive === 0) return null;
 
-  if (feedEventCount === 0) {
-    return `feed returned 0 events while ${futureActive} future booking(s) are active; holding cancellations`;
-  }
+  return `feed is not a complete calendar (error page or cut-off download) and would cancel ${cancelCount} of ${futureActive} future booking(s); holding cancellations`;
+}
 
-  // Guests cancel one at a time; a single run wiping out most of a calendar
-  // is far more likely a broken feed than a mass exodus. Threshold of 3 keeps
-  // small properties (1-2 future bookings) able to cancel legitimately.
-  if (cancelCount >= 3 && cancelCount * 2 > futureActive) {
-    return `feed would cancel ${cancelCount} of ${futureActive} future booking(s) in one run; holding cancellations`;
-  }
-
-  return null;
+/**
+ * Cancels whose booking UID is still present in the feed as some other kind
+ * of event (e.g. SUMMARY no longer "Reserved"). Real Airbnb cancellations
+ * remove the UID entirely; a UID that is still there means our parsing no
+ * longer recognises it, so cancelling would be wrong.
+ */
+export function cancelsStillInFeed(
+  cancels: ReconcileCancel[],
+  existingBookings: ExistingBooking[],
+  feedUids: ReadonlySet<string>
+): ReconcileCancel[] {
+  const uidById = new Map(existingBookings.map((b) => [b.id, b.icalUid]));
+  return cancels.filter((c) => feedUids.has(uidById.get(c.bookingId) ?? ""));
 }
 
 /**

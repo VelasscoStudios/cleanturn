@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { parseIcs, countFeedEvents, isCompleteCalendar } from "../lib/ical";
+import { parseIcs, feedUids, isCompleteCalendar } from "../lib/ical";
 import {
   reconcile,
   computeSameDay,
   feedSafetyError,
+  cancelsStillInFeed,
   createCoalescer,
   type ExistingBooking,
 } from "../lib/sync-core";
@@ -335,7 +336,7 @@ describe("computeSameDay", () => {
   });
 });
 
-describe("feedSafetyError (mass-cancel circuit breaker)", () => {
+describe("feedSafetyError / cancelsStillInFeed (circuit breaker)", () => {
   function activeBooking(uid: string, checkout: string, jobStatus = "assigned"): ExistingBooking {
     return {
       id: `b-${uid}`,
@@ -346,61 +347,61 @@ describe("feedSafetyError (mass-cancel circuit breaker)", () => {
       job: { id: `j-${uid}`, status: jobStatus, cleanerId: null },
     };
   }
+  const four = [
+    activeBooking("u1", "2026-07-10"),
+    activeBooking("u2", "2026-07-15"),
+    activeBooking("u3", "2026-07-20"),
+    activeBooking("u4", "2026-07-25"),
+  ];
 
-  it("refuses an empty feed when future active bookings exist", () => {
-    const existing = [activeBooking("u1", "2026-07-10")];
-    const reason = feedSafetyError(existing, 0, 1, TODAY);
-    expect(reason).toMatch(/0 events/);
+  it("complete calendar: any number of cancels is trusted (gone from Airbnb = cancelled)", () => {
+    expect(feedSafetyError(four, true, 4, TODAY)).toBeNull();
+    expect(feedSafetyError(four, true, 3, TODAY)).toBeNull();
   });
 
-  it("allows an empty feed when there is nothing future to protect", () => {
-    // Only past bookings — a genuinely empty calendar must still sync ok.
-    const existing = [activeBooking("u1", "2026-06-01")];
-    expect(feedSafetyError(existing, 0, 0, TODAY)).toBeNull();
+  it("incomplete feed (error page / cut-off) holds cancels while future bookings exist", () => {
+    expect(feedSafetyError(four, false, 3, TODAY)).toMatch(/not a complete calendar.*cancel 3 of 4.*holding/);
   });
 
-  it("allows an empty feed on a property with no bookings at all", () => {
-    expect(feedSafetyError([], 0, 0, TODAY)).toBeNull();
+  it("incomplete feed that cancels nothing is fine", () => {
+    expect(feedSafetyError(four, false, 0, TODAY)).toBeNull();
   });
 
-  it("refuses a run that would cancel most of the future calendar", () => {
-    const existing = [
-      activeBooking("u1", "2026-07-10"),
-      activeBooking("u2", "2026-07-15"),
-      activeBooking("u3", "2026-07-20"),
-      activeBooking("u4", "2026-07-25"),
-    ];
-    // 3 of 4 cancelled in one run — feed almost certainly broken.
-    const reason = feedSafetyError(existing, 1, 3, TODAY);
-    expect(reason).toMatch(/cancel 3 of 4/);
-  });
-
-  it("allows small legitimate cancellations (1-2 in a run)", () => {
-    const existing = [
-      activeBooking("u1", "2026-07-10"),
-      activeBooking("u2", "2026-07-15"),
-    ];
-    expect(feedSafetyError(existing, 1, 1, TODAY)).toBeNull();
-    // Even both bookings of a tiny calendar: below the >=3 threshold.
-    expect(feedSafetyError(existing, 0, 2, TODAY)).toMatch(/0 events/); // empty feed still refused
-    expect(feedSafetyError(existing, 1, 2, TODAY)).toBeNull();
-  });
-
-  it("allows many cancels when they are a minority of a big calendar", () => {
-    const existing = Array.from({ length: 10 }, (_, i) =>
-      activeBooking(`u${i}`, "2026-07-20")
-    );
-    expect(feedSafetyError(existing, 7, 3, TODAY)).toBeNull();
-  });
-
-  it("does not count cancelled or past bookings toward the future-active base", () => {
-    const cancelled: ExistingBooking = {
-      ...activeBooking("u1", "2026-07-10"),
-      status: "cancelled",
-    };
+  it("ignores cancelled and past bookings when sizing what's at risk", () => {
+    const cancelled: ExistingBooking = { ...activeBooking("u1", "2026-07-10"), status: "cancelled" };
     const past = activeBooking("u2", "2026-06-01");
-    // No future-active bookings -> nothing to protect, empty feed fine.
-    expect(feedSafetyError([cancelled, past], 0, 0, TODAY)).toBeNull();
+    expect(feedSafetyError([cancelled, past], false, 1, TODAY)).toBeNull();
+  });
+
+  it("holds a cancel whose UID is still in the feed under another SUMMARY", () => {
+    const text = icsWith([
+      { uid: "u1", start: "2026-07-08", end: "2026-07-10", summary: "Booked" }, // Airbnb renamed "Reserved"
+      { uid: "blk", start: "2027-01-01", end: "2027-02-01", summary: "Airbnb (Not available)" },
+    ]);
+    const existing = [activeBooking("u1", "2026-07-10"), activeBooking("u2", "2026-07-15")];
+    const { cancels } = reconcile(existing, parseIcs(text), TODAY);
+    expect(cancels.map((c) => c.bookingId)).toEqual(["b-u1", "b-u2"]);
+    expect(cancelsStillInFeed(cancels, existing, feedUids(text)).map((c) => c.bookingId)).toEqual(["b-u1"]);
+  });
+});
+
+describe("isCompleteCalendar / feedUids", () => {
+  it("a feed with only 'Not available' blocks is a complete calendar", () => {
+    const text = icsWith([{ uid: "blk", start: "2027-08-07", end: "2027-11-12", summary: "Airbnb (Not available)" }]);
+    expect(parseIcs(text)).toHaveLength(0);
+    expect(isCompleteCalendar(text)).toBe(true);
+    expect([...feedUids(text)]).toEqual(["blk"]);
+  });
+
+  it("an HTML error page is not a calendar and has no UIDs", () => {
+    const html = "<!doctype html><html><body>oops</body></html>";
+    expect(isCompleteCalendar(html)).toBe(false);
+    expect(feedUids(html).size).toBe(0);
+  });
+
+  it("a truncated body is not a complete calendar", () => {
+    const text = icsWith([{ uid: "u1", start: "2026-07-10", end: "2026-07-12", summary: "Reserved" }]);
+    expect(isCompleteCalendar(text.slice(0, text.length - 20))).toBe(false);
   });
 });
 
@@ -436,44 +437,5 @@ describe("createCoalescer", () => {
     const coalesce = createCoalescer<number>();
     await expect(coalesce(() => Promise.reject(new Error("boom")))).rejects.toThrow("boom");
     expect(await coalesce(async () => 7)).toBe(7);
-  });
-});
-
-describe("countFeedEvents / isCompleteCalendar (breaker health signal)", () => {
-  it("counts 'Not available' blocks, so a feed with no reservations is not 'empty'", () => {
-    const text = icsWith([
-      { uid: "blk", start: "2027-08-07", end: "2027-11-12", summary: "Airbnb (Not available)" },
-    ]);
-    expect(parseIcs(text)).toHaveLength(0);
-    expect(countFeedEvents(text)).toBe(1);
-    expect(isCompleteCalendar(text)).toBe(true);
-  });
-
-  it("an HTML error page has 0 events and is not a calendar", () => {
-    const html = "<!doctype html><html><body>oops</body></html>";
-    expect(countFeedEvents(html)).toBe(0);
-    expect(isCompleteCalendar(html)).toBe(false);
-  });
-
-  it("a truncated body is not a complete calendar", () => {
-    const text = icsWith([{ uid: "u1", start: "2026-07-10", end: "2026-07-12", summary: "Reserved" }]);
-    expect(isCompleteCalendar(text.slice(0, text.length - 20))).toBe(false);
-  });
-
-  it("the Bowness case: last reservation cancelled, only blocks left -> breaker allows it", () => {
-    const existing: ExistingBooking[] = [
-      {
-        id: "b1",
-        icalUid: "gone",
-        checkinDate: "2026-07-20",
-        checkoutDate: "2026-07-23",
-        status: "active",
-        job: { id: "j1", status: "assigned", cleanerId: null },
-      },
-    ];
-    const text = icsWith([{ uid: "blk", start: "2027-08-07", end: "2027-11-12", summary: "Airbnb (Not available)" }]);
-    const { cancels } = reconcile(existing, parseIcs(text), TODAY);
-    expect(cancels).toHaveLength(1);
-    expect(feedSafetyError(existing, countFeedEvents(text), cancels.length, TODAY)).toBeNull();
   });
 });

@@ -1,10 +1,11 @@
 import { prisma } from "./db";
 import { todayStr, addDays } from "./dates";
-import { parseIcs, countFeedEvents, isCompleteCalendar } from "./ical";
+import { parseIcs, feedUids, isCompleteCalendar } from "./ical";
 import {
   reconcile,
   computeSameDay,
   feedSafetyError,
+  cancelsStillInFeed,
   createCoalescer,
   type ExistingBooking,
   type SameDayJobInput,
@@ -491,17 +492,27 @@ export async function syncProperty(
   const existingBookings = await loadExistingBookingsForProperty(property.id);
   const { creates, moves, cancels } = reconcile(existingBookings, parsedEvents, today);
 
-  // Circuit breaker: an empty/gutted feed is indistinguishable from a mass
-  // cancellation, and applied cancels are permanent. Only the cancels are
-  // held — new bookings and date moves still go through.
-  const guardError = feedSafetyError(existingBookings, countFeedEvents(icsText), cancels.length, today);
+  // Circuit breaker: a booking gone from a complete calendar was cancelled
+  // and is applied. Cancels are held only when the feed is suspect — not a
+  // complete calendar, or the booking's UID is still there under another
+  // SUMMARY. New bookings and date moves always go through.
+  const complete = isCompleteCalendar(icsText);
+  let guardError = feedSafetyError(existingBookings, complete, cancels.length, today);
+  let suspect = guardError ? cancels : [];
+  if (!guardError) {
+    suspect = cancelsStillInFeed(cancels, existingBookings, feedUids(icsText));
+    if (suspect.length > 0) {
+      guardError = `${suspect.length} booking(s) still in the feed but no longer marked "Reserved"; holding cancellations`;
+    }
+  }
 
   const approved = opts.approvedCancelBookingIds;
-  if (guardError && approved && approved.size > 0 && !isCompleteCalendar(icsText)) {
+  if (guardError && approved && approved.size > 0 && !complete) {
     throw new Error("feed is not a complete calendar right now; refusing to apply cancellations — try again later");
   }
 
-  const toCancel = !guardError ? cancels : cancels.filter((c) => approved?.has(c.bookingId));
+  const suspectIds = new Set(suspect.map((c) => c.bookingId));
+  const toCancel = cancels.filter((c) => !suspectIds.has(c.bookingId) || approved?.has(c.bookingId));
   const held = cancels.length - toCancel.length;
 
   const created = await applyCreates(property.id, property.cleanCostCents, creates);
